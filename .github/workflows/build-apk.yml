@@ -28,10 +28,37 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Enable AndroidX
+      - name: Configure AndroidX and Java 17
         run: |
           echo "android.useAndroidX=true" > project/gradle.properties
           echo "android.enableJetifier=true" >> project/gradle.properties
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          file = Path("project/app/build.gradle.kts")
+          text = file.read_text()
+
+          if "compileOptions {" not in text:
+              text = text.replace(
+                  "android {",
+                  """android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }"""
+              )
+
+          if "jvmToolchain(17)" not in text:
+              text += """
+
+          kotlin {
+              jvmToolchain(17)
+          }
+          """
+
+          file.write_text(text)
+          PY
 
       - name: Build APK
         working-directory: ./project
