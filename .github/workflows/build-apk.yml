@@ -17,6 +17,12 @@ jobs:
           mkdir project
           unzip -o *.zip -d project
 
+      - name: Copy Gradle properties
+        run: |
+          cp gradle.properties project/gradle.properties
+          echo "AndroidX enabled"
+          cat project/gradle.properties
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -37,4 +43,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: EdisonSolar-APK
-          path: "project/app/build/outputs/apk/debug/*.apk"
+          path: project/app/build/outputs/apk/debug/*.apk
