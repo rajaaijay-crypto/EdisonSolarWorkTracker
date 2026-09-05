@@ -28,6 +28,11 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Enable AndroidX
+        run: |
+          echo "android.useAndroidX=true" >> project/gradle.properties
+          echo "android.enableJetifier=true" >> project/gradle.properties
+
       - name: Build APK
         working-directory: ./project
         run: gradle assembleDebug --stacktrace
