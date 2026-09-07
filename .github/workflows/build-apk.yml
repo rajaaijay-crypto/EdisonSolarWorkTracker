@@ -25,20 +25,31 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Check project files
+      - name: Extract Edison Solar Project
         run: |
-          pwd
-          ls -la
-          echo "Checking Gradle files..."
-          test -f settings.gradle.kts
-          test -f build.gradle.kts
-          test -f app/build.gradle.kts
+          unzip -o EdisonSolarProfessionalV2_Voice_FIXED.zip -d extracted
+
+      - name: Find Android Project
+        run: |
+          echo "Searching for Gradle project..."
+          PROJECT_DIR=$(find extracted -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
+          echo "PROJECT_DIR=$PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+          echo "Project files:"
+          ls -la "$PROJECT_DIR"
+
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -f "$PROJECT_DIR/build.gradle.kts"
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
 
       - name: Build APK
-        run: gradle assembleDebug --stacktrace
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: EdisonSolar-Professional-V2-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: "${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk"
