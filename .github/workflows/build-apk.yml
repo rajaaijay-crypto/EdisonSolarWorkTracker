@@ -1,46 +1,2549 @@
-name: Build Edison Solar APK
+package com.edisonsolar.worktracker
 
-on:
-  workflow_dispatch:
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import android.os.Bundle
+import android.provider.MediaStore
+import android.speech.RecognizerIntent
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.*
+import androidx.core.app.ActivityCompat
+import androidx.core.content.FileProvider
+import com.google.android.gms.location.LocationServices
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.math.max
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+private data class Job(
+    var date: String,
+    var company: String,
+    var customer: String,
+    var site: String,
+    var kw: Double,
+    var payment: Double,
+    var expense: Double,
+    var salary: Double,
+    var type: String = "Installation",
+    var lat: String = "",
+    var lon: String = "",
+    var notes: String = "",
+    var photoPath: String = ""
+)
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+private data class Customer(
+    var name: String,
+    var phone: String,
+    var address: String,
+    var company: String,
+    var kw: Double,
+    var paid: Double,
+    var pending: Double,
+    var lat: String = "",
+    var lon: String = "",
+    var photoPath: String = ""
+)
 
-      - name: Extract Android project
-        run: |
-          rm -rf project
-          mkdir project
-          unzip -o *.zip -d project
+private data class Company(var name: String)
 
-      - name: Copy Gradle properties
-        run: |
-          cp gradle.properties project/gradle.properties
-          echo "AndroidX enabled"
-          cat project/gradle.properties
+private data class Worker(
+    var name: String,
+    var days: Int,
+    var salary: Double,
+    var advance: Double
+)
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
+private data class Stock(
+    var name: String,
+    var qty: Double,
+    var unit: String
+)
 
-      - name: Set up Gradle 8.9
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: '8.9'
+private data class Reminder(
+    var title: String,
+    var date: String,
+    var amount: Double
+)
 
-      - name: Build APK
-        working-directory: ./project
-        run: |
-          gradle assembleDebug --stacktrace
+private data class Service(
+    var customer: String,
+    var date: String,
+    var note: String
+)
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: EdisonSolar-APK
-          path: project/app/build/outputs/apk/debug/*.apk
+private class SimpleChartView(
+    context: android.content.Context
+) : View(context) {
+
+    var title: String = ""
+    var labels: List<String> = emptyList()
+    var values: List<Double> = emptyList()
+    var type: Int = 0
+    var suffix: String = ""
+
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(c: Canvas) {
+        super.onDraw(c)
+
+        c.drawColor(Color.WHITE)
+
+        val w = width.toFloat()
+        val h = height.toFloat()
+
+        p.color = Color.rgb(25, 55, 85)
+        p.textSize = 30f
+        p.typeface = Typeface.DEFAULT_BOLD
+
+        c.drawText(title, 24f, 38f, p)
+
+        if (values.isEmpty()) {
+            p.textSize = 18f
+            p.typeface = Typeface.DEFAULT
+            c.drawText("No data yet", 24f, 82f, p)
+            return
+        }
+
+        val l = 58f
+        val r = w - 24f
+        val top = 62f
+        val bot = h - 46f
+
+        val maxV = max(1.0, values.maxOrNull() ?: 1.0)
+
+        p.strokeWidth = 2f
+        p.color = Color.LTGRAY
+
+        c.drawLine(l, bot, r, bot, p)
+        c.drawLine(l, top, l, bot, p)
+
+        p.textSize = 18f
+        p.typeface = Typeface.DEFAULT
+
+        if (type == 2) {
+
+            val cx = w / 2f
+            val cy = (top + bot) / 2f
+            val rad = minOf(w, h) * 0.28f
+
+            val total = values.sum().coerceAtLeast(1.0)
+
+            var start = -90f
+
+            val colors = intArrayOf(
+                Color.rgb(25, 118, 210),
+                Color.rgb(34, 139, 84),
+                Color.rgb(245, 143, 35),
+                Color.rgb(156, 39, 176),
+                Color.rgb(220, 70, 70),
+                Color.rgb(0, 150, 136)
+            )
+
+            values.forEachIndexed { i, v ->
+
+                p.color = colors[i % colors.size]
+
+                val sweep = (v / total * 360).toFloat()
+
+                c.drawArc(
+                    cx - rad,
+                    cy - rad,
+                    cx + rad,
+                    cy + rad,
+                    start,
+                    sweep,
+                    true,
+                    p
+                )
+
+                start += sweep
+            }
+
+            labels.forEachIndexed { i, lab ->
+
+                p.color = colors[i % colors.size]
+
+                c.drawRect(
+                    24f,
+                    bot + 8 + i * 22f,
+                    40f,
+                    bot + 24 + i * 22f,
+                    p
+                )
+
+                p.color = Color.DKGRAY
+
+                c.drawText(
+                    "$lab (${String.format(Locale.getDefault(), "%.0f", values[i])})",
+                    48f,
+                    bot + 22 + i * 22f,
+                    p
+                )
+            }
+
+            return
+        }
+
+        val step =
+            if (values.size == 1)
+                r - l
+            else
+                (r - l) / (values.size - 1)
+
+        if (type == 0) {
+
+            val bw = ((r - l) / values.size) * .58f
+
+            values.forEachIndexed { i, v ->
+
+                val x =
+                    l +
+                    i * (r - l) / values.size +
+                    (r - l) / values.size * .21f
+
+                val y =
+                    bot -
+                    (v / maxV).toFloat() * (bot - top)
+
+                p.color = Color.rgb(25, 118, 210)
+
+                c.drawRect(
+                    x,
+                    y,
+                    x + bw,
+                    bot,
+                    p
+                )
+
+                p.color = Color.DKGRAY
+
+                c.drawText(
+                    labels[i],
+                    x,
+                    bot + 25,
+                    p
+                )
+
+                c.drawText(
+                    String.format(
+                        Locale.getDefault(),
+                        "%.0f%s",
+                        v,
+                        suffix
+                    ),
+                    x,
+                    y - 7,
+                    p
+                )
+            }
+
+        } else {
+
+            p.color = Color.rgb(25, 118, 210)
+            p.strokeWidth = 5f
+
+            var lastX = l
+
+            var lastY =
+                bot -
+                (values[0] / maxV).toFloat() *
+                (bot - top)
+
+            values.forEachIndexed { i, v ->
+
+                val x = l + i * step
+
+                val y =
+                    bot -
+                    (v / maxV).toFloat() *
+                    (bot - top)
+
+                if (i > 0) {
+                    c.drawLine(
+                        lastX,
+                        lastY,
+                        x,
+                        y,
+                        p
+                    )
+                }
+
+                c.drawCircle(
+                    x,
+                    y,
+                    7f,
+                    p
+                )
+
+                p.color = Color.DKGRAY
+
+                c.drawText(
+                    labels[i],
+                    x - 12,
+                    bot + 25,
+                    p
+                )
+
+                p.color = Color.rgb(25, 118, 210)
+
+                lastX = x
+                lastY = y
+            }
+        }
+    }
+}
+
+class MainActivity : Activity() {
+
+    private val blue =
+        Color.rgb(25, 118, 210)
+
+    private val pale =
+        Color.rgb(235, 247, 255)
+
+    private val dark =
+        Color.rgb(25, 55, 85)
+
+    private val green =
+        Color.rgb(34, 139, 84)
+
+    private val orange =
+        Color.rgb(245, 143, 35)
+
+    private lateinit var root: LinearLayout
+
+    private val prefs by lazy {
+        getSharedPreferences(
+            "edison_v2",
+            MODE_PRIVATE
+        )
+    }
+
+    private val jobs =
+        mutableListOf<Job>()
+
+    private val customers =
+        mutableListOf<Customer>()
+
+    private val companies =
+        mutableListOf<Company>()
+
+    private val workers =
+        mutableListOf<Worker>()
+
+    private val stocks =
+        mutableListOf<Stock>()
+
+    private val reminders =
+        mutableListOf<Reminder>()
+
+    private val services =
+        mutableListOf<Service>()
+
+    private var lat = ""
+    private var lon = ""
+    private var photoPath = ""
+
+    private var voiceRequest = 500
+
+    private var voiceLanguage = "en-IN"
+
+    override fun onCreate(b: Bundle?) {
+
+        super.onCreate(b)
+
+        load()
+
+        dashboard()
+    }
+
+    private fun now(): String =
+        SimpleDateFormat(
+            "dd/MM/yyyy",
+            Locale.getDefault()
+        ).format(Date())
+
+    private fun month(): String =
+        SimpleDateFormat(
+            "MM/yyyy",
+            Locale.getDefault()
+        ).format(Date())
+
+    private fun enc(s: String) =
+        android.util.Base64.encodeToString(
+            s.toByteArray(),
+            android.util.Base64.NO_WRAP
+        )
+
+    private fun dec(s: String) =
+        runCatching {
+            String(
+                android.util.Base64.decode(
+                    s,
+                    android.util.Base64.NO_WRAP
+                )
+            )
+        }.getOrDefault("")
+
+    private fun pack(parts: List<String>) =
+        parts.joinToString("^") {
+            enc(it)
+        }
+
+    private fun unpack(s: String) =
+        s.split("^").map {
+            dec(it)
+        }
+
+    private fun save() {
+
+        prefs.edit()
+            .putString(
+                "jobs",
+                jobs.joinToString("\n") {
+                    pack(
+                        listOf(
+                            it.date,
+                            it.company,
+                            it.customer,
+                            it.site,
+                            it.kw.toString(),
+                            it.payment.toString(),
+                            it.expense.toString(),
+                            it.salary.toString(),
+                            it.type,
+                            it.lat,
+                            it.lon,
+                            it.notes,
+                            it.photoPath
+                        )
+                    )
+                }
+            )
+            .putString(
+                "customers",
+                customers.joinToString("\n") {
+                    pack(
+                        listOf(
+                            it.name,
+                            it.phone,
+                            it.address,
+                            it.company,
+                            it.kw.toString(),
+                            it.paid.toString(),
+                            it.pending.toString(),
+                            it.lat,
+                            it.lon,
+                            it.photoPath
+                        )
+                    )
+                }
+            )
+            .putString(
+                "companies",
+                companies.joinToString("\n") {
+                    enc(it.name)
+                }
+            )
+            .putString(
+                "workers",
+                workers.joinToString("\n") {
+                    pack(
+                        listOf(
+                            it.name,
+                            it.days.toString(),
+                            it.salary.toString(),
+                            it.advance.toString()
+                        )
+                    )
+                }
+            )
+            .putString(
+                "stocks",
+                stocks.joinToString("\n") {
+                    pack(
+                        listOf(
+                            it.name,
+                            it.qty.toString(),
+                            it.unit
+                        )
+                    )
+                }
+            )
+            .putString(
+                "reminders",
+                reminders.joinToString("\n") {
+                    pack(
+                        listOf(
+                            it.title,
+                            it.date,
+                            it.amount.toString()
+                        )
+                    )
+                }
+            )
+            .putString(
+                "services",
+                services.joinToString("\n") {
+                    pack(
+                        listOf(
+                            it.customer,
+                            it.date,
+                            it.note
+                        )
+                    )
+                }
+            )
+            .apply()
+    }
+
+    private fun load() {
+
+        fun lines(k: String) =
+            prefs.getString(k, "")!!
+                .split("\n")
+                .filter {
+                    it.isNotBlank()
+                }
+
+        lines("companies").forEach {
+            companies.add(
+                Company(dec(it))
+            )
+        }
+
+        lines("jobs").forEach {
+
+            val x = unpack(it)
+
+            if (x.size >= 13) {
+
+                jobs.add(
+                    Job(
+                        x[0],
+                        x[1],
+                        x[2],
+                        x[3],
+                        x[4].toDoubleOrNull() ?: 0.0,
+                        x[5].toDoubleOrNull() ?: 0.0,
+                        x[6].toDoubleOrNull() ?: 0.0,
+                        x[7].toDoubleOrNull() ?: 0.0,
+                        x[8],
+                        x[9],
+                        x[10],
+                        x[11],
+                        x[12]
+                    )
+                )
+            }
+        }
+
+        lines("customers").forEach {
+
+            val x = unpack(it)
+
+            if (x.size >= 10) {
+
+                customers.add(
+                    Customer(
+                        x[0],
+                        x[1],
+                        x[2],
+                        x[3],
+                        x[4].toDoubleOrNull() ?: 0.0,
+                        x[5].toDoubleOrNull() ?: 0.0,
+                        x[6].toDoubleOrNull() ?: 0.0,
+                        x[7],
+                        x[8],
+                        x[9]
+                    )
+                )
+            }
+        }
+
+        lines("workers").forEach {
+
+            val x = unpack(it)
+
+            if (x.size >= 4) {
+
+                workers.add(
+                    Worker(
+                        x[0],
+                        x[1].toIntOrNull() ?: 0,
+                        x[2].toDoubleOrNull() ?: 0.0,
+                        x[3].toDoubleOrNull() ?: 0.0
+                    )
+                )
+            }
+        }
+
+        lines("stocks").forEach {
+
+            val x = unpack(it)
+
+            if (x.size >= 3) {
+
+                stocks.add(
+                    Stock(
+                        x[0],
+                        x[1].toDoubleOrNull() ?: 0.0,
+                        x[2]
+                    )
+                )
+            }
+        }
+
+        lines("reminders").forEach {
+
+            val x = unpack(it)
+
+            if (x.size >= 3) {
+
+                reminders.add(
+                    Reminder(
+                        x[0],
+                        x[1],
+                        x[2].toDoubleOrNull() ?: 0.0
+                    )
+                )
+            }
+        }
+
+        lines("services").forEach {
+
+            val x = unpack(it)
+
+            if (x.size >= 3) {
+
+                services.add(
+                    Service(
+                        x[0],
+                        x[1],
+                        x[2]
+                    )
+                )
+            }
+        }
+
+        if (companies.isEmpty()) {
+
+            companies.addAll(
+                listOf(
+                    Company("Company 1"),
+                    Company("Company 2")
+                )
+            )
+        }
+    }
+
+    private lateinit var content: LinearLayout
+
+    private fun setup(
+        title: String,
+        back: (() -> Unit)? = null
+    ) {
+
+        root = LinearLayout(this)
+
+        root.orientation =
+            LinearLayout.VERTICAL
+
+        root.setBackgroundColor(
+            Color.WHITE
+        )
+
+        val bar =
+            LinearLayout(this)
+
+        bar.setPadding(
+            18,
+            10,
+            12,
+            8
+        )
+
+        bar.gravity =
+            Gravity.CENTER_VERTICAL
+
+        bar.setBackgroundColor(
+            pale
+        )
+
+        if (back != null) {
+
+            val b = Button(this)
+
+            b.text = "‹"
+
+            b.textSize = 28f
+
+            b.setTextColor(blue)
+
+            b.setBackgroundColor(
+                Color.TRANSPARENT
+            )
+
+            b.setOnClickListener {
+                back()
+            }
+
+            bar.addView(
+                b,
+                LinearLayout.LayoutParams(
+                    55,
+                    58
+                )
+            )
+        }
+
+        val t = TextView(this)
+
+        t.text = title
+
+        t.textSize = 22f
+
+        t.setTypeface(
+            null,
+            Typeface.BOLD
+        )
+
+        t.setTextColor(dark)
+
+        bar.addView(
+            t,
+            LinearLayout.LayoutParams(
+                0,
+                58,
+                1f
+            )
+        )
+
+        val mic = Button(this)
+
+        mic.text = "🎙️"
+
+        mic.textSize = 20f
+
+        mic.setTextColor(blue)
+
+        mic.setBackgroundColor(
+            Color.TRANSPARENT
+        )
+
+        mic.setOnClickListener {
+
+            voiceRequest = 600
+
+            startVoice()
+        }
+
+        bar.addView(
+            mic,
+            LinearLayout.LayoutParams(
+                58,
+                58
+            )
+        )
+
+        val logo =
+            ImageView(this)
+
+        logo.setImageResource(
+            com.edisonsolar.worktracker.R.drawable.edison_logo
+        )
+
+        logo.scaleType =
+            ImageView.ScaleType.CENTER_INSIDE
+
+        bar.addView(
+            logo,
+            LinearLayout.LayoutParams(
+                55,
+                58
+            )
+        )
+
+        root.addView(bar)
+
+        val scroll =
+            ScrollView(this)
+
+        val content =
+            LinearLayout(this)
+
+        content.orientation =
+            LinearLayout.VERTICAL
+
+        content.setPadding(
+            16,
+            14,
+            16,
+            90
+        )
+
+        scroll.addView(content)
+
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
+        )
+
+        setContentView(root)
+
+        this.content = content
+    }
+
+    private fun tv(
+        s: String,
+        size: Float = 16f,
+        bold: Boolean = false
+    ): TextView {
+
+        val v = TextView(this)
+
+        v.text = s
+
+        v.textSize = size
+
+        v.setTextColor(dark)
+
+        if (bold) {
+            v.setTypeface(
+                null,
+                Typeface.BOLD
+            )
+        }
+
+        v.setPadding(
+            4,
+            6,
+            4,
+            6
+        )
+
+        content.addView(v)
+
+        return v
+    }
+
+    private fun edit(
+        h: String,
+        v: String = ""
+    ): EditText {
+
+        val e = EditText(this)
+
+        e.hint = h
+
+        e.setText(v)
+
+        e.textSize = 16f
+
+        e.setPadding(
+            12,
+            4,
+            12,
+            4
+        )
+
+        content.addView(
+            e,
+            LinearLayout.LayoutParams(
+                -1,
+                58
+            )
+        )
+
+        return e
+    }
+
+    private fun button(
+        s: String,
+        primary: Boolean = true,
+        action: () -> Unit
+    ) {
+
+        val b = Button(this)
+
+        b.text = s
+
+        b.isAllCaps = false
+
+        b.textSize = 15f
+
+        b.setOnClickListener {
+            action()
+        }
+
+        if (primary) {
+
+            b.setTextColor(
+                Color.WHITE
+            )
+
+            b.setBackgroundColor(
+                blue
+            )
+
+        } else {
+
+            b.setTextColor(blue)
+        }
+
+        val p =
+            LinearLayout.LayoutParams(
+                -1,
+                52
+            )
+
+        p.setMargins(
+            0,
+            6,
+            0,
+            6
+        )
+
+        content.addView(b, p)
+    }
+
+    private fun card(
+        title: String,
+        value: String,
+        accent: Int = blue
+    ) {
+
+        val box =
+            LinearLayout(this)
+
+        box.orientation =
+            LinearLayout.VERTICAL
+
+        box.setPadding(
+            16,
+            12,
+            16,
+            12
+        )
+
+        box.background =
+            round(
+                Color.WHITE,
+                accent,
+                2,
+                18
+            )
+
+        val a =
+            TextView(this)
+
+        a.text = title
+
+        a.textSize = 13f
+
+        a.setTextColor(
+            Color.DKGRAY
+        )
+
+        val b =
+            TextView(this)
+
+        b.text = value
+
+        b.textSize = 22f
+
+        b.setTypeface(
+            null,
+            Typeface.BOLD
+        )
+
+        b.setTextColor(dark)
+
+        box.addView(a)
+
+        box.addView(b)
+
+        val p =
+            LinearLayout.LayoutParams(
+                -1,
+                88
+            )
+
+        p.setMargins(
+            0,
+            5,
+            0,
+            5
+        )
+
+        content.addView(box, p)
+    }
+
+    private fun round(
+        fill: Int,
+        stroke: Int,
+        w: Int,
+        r: Int
+    ) =
+        android.graphics.drawable
+            .GradientDrawable()
+            .apply {
+
+                setColor(fill)
+
+                setStroke(
+                    w,
+                    stroke
+                )
+
+                cornerRadius =
+                    r.toFloat()
+            }
+
+    private fun money(
+        x: Double
+    ) =
+        "₹" +
+        String.format(
+            Locale.getDefault(),
+            "%,.0f",
+            x
+        )
+
+    private fun chart(
+        title: String,
+        labels: List<String>,
+        values: List<Double>,
+        type: Int = 0,
+        suffix: String = ""
+    ) {
+
+        val v =
+            SimpleChartView(this)
+
+        v.title = title
+
+        v.labels = labels
+
+        v.values = values
+
+        v.type = type
+
+        v.suffix = suffix
+
+        val height =
+            when (type) {
+                2 -> 330
+                else -> 300
+            }
+
+        content.addView(
+            v,
+            LinearLayout.LayoutParams(
+                -1,
+                height
+            ).apply {
+                setMargins(
+                    0,
+                    8,
+                    0,
+                    12
+                )
+            }
+        )
+    }
+
+    private fun recentMonths(
+        n: Int = 6
+    ): List<String> {
+
+        val cal =
+            Calendar.getInstance()
+
+        val out =
+            mutableListOf<String>()
+
+        repeat(n) {
+
+            out.add(
+                String.format(
+                    Locale.getDefault(),
+                    "%02d/%04d",
+                    cal.get(Calendar.MONTH) + 1,
+                    cal.get(Calendar.YEAR)
+                )
+            )
+
+            cal.add(
+                Calendar.MONTH,
+                -1
+            )
+        }
+
+        return out.reversed()
+    }
+
+    private fun dashboard() {
+
+        setup("Dashboard")
+
+        val today =
+            jobs.filter {
+                it.date == now()
+            }
+
+        val m =
+            jobs.filter {
+                it.date.endsWith(month())
+            }
+
+        val col =
+            today.sumOf {
+                it.payment
+            }
+
+        val exp =
+            today.sumOf {
+                it.expense
+            }
+
+        val sal =
+            today.sumOf {
+                it.salary
+            }
+
+        val profit =
+            col - exp - sal
+
+        val logo =
+            ImageView(this)
+
+        logo.setImageResource(
+            R.drawable.edison_logo
+        )
+
+        logo.adjustViewBounds = true
+
+        content.addView(
+            logo,
+            LinearLayout.LayoutParams(
+                -1,
+                145
+            )
+        )
+
+        tv(
+            "EDISON SOLAR • Professional V2",
+            18f,
+            true
+        )
+
+        tv(
+            "6383287878",
+            15f
+        )
+
+        card(
+            "Current Balance",
+            money(
+                jobs.sumOf { it.payment } -
+                jobs.sumOf { it.expense } -
+                jobs.sumOf { it.salary }
+            ),
+            green
+        )
+
+        card(
+            "Today Profit",
+            money(profit),
+            green
+        )
+
+        card(
+            "Today Collection",
+            money(col),
+            blue
+        )
+
+        card(
+            "Today Expenses",
+            money(exp + sal),
+            orange
+        )
+
+        card(
+            "Installed Today",
+            String.format(
+                Locale.getDefault(),
+                "%.2f kW",
+                today.sumOf { it.kw }
+            ),
+            blue
+        )
+
+        tv(
+            "This Month",
+            18f,
+            true
+        )
+
+        tv(
+            "Collection ${money(m.sumOf { it.payment })}   •   " +
+            "Expense ${money(m.sumOf { it.expense } + m.sumOf { it.salary })}   •   " +
+            "Profit ${money(m.sumOf { it.payment - it.expense - it.salary })}"
+        )
+
+        val months =
+            recentMonths()
+
+        chart(
+            "6-Month Collection",
+            months,
+            months.map { mm ->
+                jobs.filter {
+                    it.date.endsWith(mm)
+                }.sumOf {
+                    it.payment
+                }
+            },
+            1,
+            ""
+        )
+
+        chart(
+            "6-Month Profit",
+            months,
+            months.map { mm ->
+                jobs.filter {
+                    it.date.endsWith(mm)
+                }.sumOf {
+                    it.payment -
+                    it.expense -
+                    it.salary
+                }
+            },
+            1,
+            ""
+        )
+
+        button(
+            "＋ New Site Entry"
+        ) {
+            installation()
+        }
+
+        button(
+            "👥 Customers & Sites"
+        ) {
+            customersScreen()
+        }
+
+        button(
+            "💰 Quotation / Invoice"
+        ) {
+            billingMenu()
+        }
+
+        button(
+            "📊 Reports & Charts"
+        ) {
+            reports()
+        }
+
+        button(
+            "🏢 Companies"
+        ) {
+            companiesScreen()
+        }
+
+        button(
+            "📦 Material Stock"
+        ) {
+            stockScreen()
+        }
+
+        button(
+            "👷 Worker Management"
+        ) {
+            workerScreen()
+        }
+
+        button(
+            "🔔 Reminders"
+        ) {
+            remindersScreen()
+        }
+
+        button(
+            "🔧 Service & Maintenance"
+        ) {
+            serviceScreen()
+        }
+
+        button(
+            "🎙️ Voice Assistant — Speak & Add Anything"
+        ) {
+            voiceEntry()
+        }
+
+        button(
+            "📜 Site / Date History"
+        ) {
+            history()
+        }
+
+        button(
+            "📤 Excel / CSV Export"
+        ) {
+            exportCsv()
+        }
+
+        button(
+            "⚙️ Admin & Backup"
+        ) {
+            adminScreen()
+        }
+    }
+
+    private fun companiesScreen() {
+
+        setup(
+            "Companies",
+            ::dashboard
+        )
+
+        companies.forEachIndexed { idx, c ->
+
+            card(
+                "Company ${idx + 1}",
+                c.name
+            )
+
+            button(
+                "Open Report: ${c.name}",
+                false
+            ) {
+                companyReport(c.name)
+            }
+        }
+
+        val e =
+            edit(
+                "Add company name"
+            )
+
+        button(
+            "＋ Add Company"
+        ) {
+
+            if (e.text.isNotBlank()) {
+
+                companies.add(
+                    Company(
+                        e.text.toString().trim()
+                    )
+                )
+
+                save()
+
+                companiesScreen()
+            }
+        }
+    }
+
+    private fun companyReport(
+        name: String
+    ) {
+
+        setup(
+            "Company Report",
+            ::companiesScreen
+        )
+
+        val x =
+            jobs.filter {
+                it.company == name
+            }
+
+        card(
+            "Installed kW",
+            String.format(
+                Locale.getDefault(),
+                "%.2f",
+                x.sumOf { it.kw }
+            )
+        )
+
+        card(
+            "Collection",
+            money(
+                x.sumOf { it.payment }
+            )
+        )
+
+        card(
+            "Expense + Salary",
+            money(
+                x.sumOf {
+                    it.expense + it.salary
+                }
+            ),
+            orange
+        )
+
+        card(
+            "Net Profit",
+            money(
+                x.sumOf {
+                    it.payment -
+                    it.expense -
+                    it.salary
+                }
+            ),
+            green
+        )
+
+        x.takeLast(20)
+            .reversed()
+            .forEach {
+
+                tv(
+                    "${it.date} • ${it.customer} • " +
+                    "${it.kw} kW • " +
+                    "${money(it.payment - it.expense - it.salary)}"
+                )
+            }
+    }
+
+    private fun installation() {
+
+        setup(
+            "New Site Entry",
+            ::dashboard
+        )
+
+        val d =
+            edit(
+                "Date",
+                now()
+            )
+
+        val co =
+            edit(
+                "Company",
+                companies.firstOrNull()?.name
+                    ?: "Company 1"
+            )
+
+        val cu =
+            edit(
+                "Customer name"
+            )
+
+        val site =
+            edit(
+                "Area / Site"
+            )
+
+        val kw =
+            edit(
+                "Installed kW"
+            )
+
+        val pay =
+            edit(
+                "Customer payment ₹"
+            )
+
+        val ex =
+            edit(
+                "Travel/Food/Material/Other expense ₹"
+            )
+
+        val sal =
+            edit(
+                "Site salary/labour ₹"
+            )
+
+        val note =
+            edit(
+                "Notes / remarks"
+            )
+
+        button(
+            "📍 Capture Current GPS"
+        ) {
+            captureLocation()
+        }
+
+        button(
+            "📸 Take Site Photo"
+        ) {
+            takePhoto()
+        }
+
+        button(
+            "🎙️ Fill by Voice"
+        ) {
+
+            voiceRequest = 501
+
+            startVoice()
+        }
+
+        button(
+            "Save Installation"
+        ) {
+
+            jobs.add(
+                Job(
+                    d.text.toString(),
+                    co.text.toString(),
+                    cu.text.toString(),
+                    site.text.toString(),
+                    kw.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    pay.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    ex.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    sal.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    "Installation",
+                    lat,
+                    lon,
+                    note.text.toString(),
+                    photoPath
+                )
+            )
+
+            if (cu.text.isNotBlank()) {
+
+                customers.add(
+                    Customer(
+                        cu.text.toString(),
+                        "",
+                        site.text.toString(),
+                        co.text.toString(),
+                        kw.text.toString()
+                            .toDoubleOrNull()
+                            ?: 0.0,
+                        pay.text.toString()
+                            .toDoubleOrNull()
+                            ?: 0.0,
+                        0.0,
+                        lat,
+                        lon,
+                        photoPath
+                    )
+                )
+            }
+
+            save()
+
+            Toast.makeText(
+                this,
+                "Site saved successfully",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            dashboard()
+        }
+    }
+
+    private fun customersScreen() {
+
+        setup(
+            "Customers",
+            ::dashboard
+        )
+
+        val q =
+            edit(
+                "Search customer / mobile / site"
+            )
+
+        button("Search") {
+            customersScreenFiltered(
+                q.text.toString()
+            )
+        }
+
+        customers
+            .take(50)
+            .reversed()
+            .forEach { c ->
+
+                val v =
+                    TextView(this)
+
+                v.text =
+                    "${c.name}\n" +
+                    "${c.phone} • ${c.address}\n" +
+                    "${c.kw} kW • Paid ${money(c.paid)} • Pending ${money(c.pending)}"
+
+                v.textSize = 16f
+
+                v.setPadding(
+                    16,
+                    12,
+                    16,
+                    12
+                )
+
+                v.background =
+                    round(
+                        Color.WHITE,
+                        blue,
+                        1,
+                        14
+                    )
+
+                v.setOnClickListener {
+                    customerDetail(c)
+                }
+
+                content.addView(
+                    v,
+                    LinearLayout.LayoutParams(
+                        -1,
+                        92
+                    ).apply {
+                        setMargins(
+                            0,
+                            6,
+                            0,
+                            6
+                        )
+                    }
+                )
+            }
+
+        button(
+            "＋ Add Customer"
+        ) {
+            addCustomer()
+        }
+    }
+
+    private fun customersScreenFiltered(
+        s: String
+    ) {
+
+        if (s.isBlank()) {
+
+            customersScreen()
+
+            return
+        }
+
+        setup(
+            "Search Results",
+            ::customersScreen
+        )
+
+        customers
+            .filter {
+                it.name.contains(s, true) ||
+                it.phone.contains(s) ||
+                it.address.contains(s, true)
+            }
+            .forEach {
+                customerDetailCard(it)
+            }
+    }
+
+    private fun customerDetailCard(
+        c: Customer
+    ) {
+
+        val b =
+            Button(this)
+
+        b.text =
+            "${c.name} • ${c.kw} kW • Pending ${money(c.pending)}"
+
+        b.setOnClickListener {
+            customerDetail(c)
+        }
+
+        content.addView(b)
+    }
+
+    private fun addCustomer() {
+
+        setup(
+            "Add Customer",
+            ::customersScreen
+        )
+
+        val n =
+            edit("Customer name")
+
+        val p =
+            edit("Mobile")
+
+        val a =
+            edit("Address / Area")
+
+        val co =
+            edit("Company")
+
+        val kw =
+            edit("Installation kW")
+
+        val paid =
+            edit("Payment received ₹")
+
+        button(
+            "📍 Capture GPS"
+        ) {
+            captureLocation()
+        }
+
+        button(
+            "📸 Customer Photo"
+        ) {
+            takePhoto()
+        }
+
+        button(
+            "Save Customer"
+        ) {
+
+            customers.add(
+                Customer(
+                    n.text.toString(),
+                    p.text.toString(),
+                    a.text.toString(),
+                    co.text.toString(),
+                    kw.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    paid.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    0.0,
+                    lat,
+                    lon,
+                    photoPath
+                )
+            )
+
+            save()
+
+            customersScreen()
+        }
+    }
+
+    private fun customerDetail(
+        c: Customer
+    ) {
+
+        setup(
+            "Customer Details",
+            ::customersScreen
+        )
+
+        tv(
+            "${c.name}\n" +
+            "${c.phone}\n" +
+            "${c.address}\n" +
+            "${c.company}\n" +
+            "System: ${c.kw} kW\n" +
+            "Paid: ${money(c.paid)}\n" +
+            "Pending: ${money(c.pending)}",
+            18f,
+            true
+        )
+
+        if (c.lat.isNotBlank()) {
+
+            button(
+                "📍 View Location"
+            ) {
+                openMap(
+                    c.lat,
+                    c.lon
+                )
+            }
+        }
+
+        val hist =
+            jobs.filter {
+                it.customer.equals(
+                    c.name,
+                    true
+                )
+            }
+
+        tv(
+            "Installation history",
+            18f,
+            true
+        )
+
+        hist.forEach {
+
+            tv(
+                "${it.date} • ${it.kw} kW • " +
+                "${money(it.payment)} • " +
+                "Profit ${money(it.payment - it.expense - it.salary)}"
+            )
+        }
+
+        button(
+            "✏️ Edit Customer"
+        ) {
+            editCustomer(c)
+        }
+    }
+
+    private fun editCustomer(
+        c: Customer
+    ) {
+
+        setup(
+            "Edit Customer",
+            ::customersScreen
+        )
+
+        val n =
+            edit(
+                "Customer name",
+                c.name
+            )
+
+        val p =
+            edit(
+                "Mobile",
+                c.phone
+            )
+
+        val a =
+            edit(
+                "Address",
+                c.address
+            )
+
+        val co =
+            edit(
+                "Company",
+                c.company
+            )
+
+        val kw =
+            edit(
+                "kW",
+                c.kw.toString()
+            )
+
+        val paid =
+            edit(
+                "Paid",
+                c.paid.toString()
+            )
+
+        val pend =
+            edit(
+                "Pending",
+                c.pending.toString()
+            )
+
+        button(
+            "Update Customer"
+        ) {
+
+            c.name =
+                n.text.toString()
+
+            c.phone =
+                p.text.toString()
+
+            c.address =
+                a.text.toString()
+
+            c.company =
+                co.text.toString()
+
+            c.kw =
+                kw.text.toString()
+                    .toDoubleOrNull()
+                    ?: c.kw
+
+            c.paid =
+                paid.text.toString()
+                    .toDoubleOrNull()
+                    ?: c.paid
+
+            c.pending =
+                pend.text.toString()
+                    .toDoubleOrNull()
+                    ?: c.pending
+
+            save()
+
+            customersScreen()
+        }
+
+        button(
+            "🗑️ Delete Customer",
+            false
+        ) {
+
+            customers.remove(c)
+
+            save()
+
+            customersScreen()
+        }
+    }
+
+    private fun billingMenu() {
+
+        setup(
+            "Quotation & Billing",
+            ::dashboard
+        )
+
+        tv(
+            "Business flow: " +
+            "Quotation → Advance → Installation → Invoice → Payment → Pending → Reminder",
+            16f,
+            true
+        )
+
+        button(
+            "＋ New Quotation"
+        ) {
+            quoteScreen()
+        }
+
+        button(
+            "🧾 New Invoice"
+        ) {
+            invoiceScreen()
+        }
+
+        button(
+            "💵 Payment Collection"
+        ) {
+            paymentScreen()
+        }
+
+        button(
+            "🔔 Pending Payment Reminders"
+        ) {
+            remindersScreen()
+        }
+    }
+
+    private fun quoteScreen() {
+
+        setup(
+            "Quotation",
+            ::billingMenu
+        )
+
+        val no =
+            edit(
+                "Quotation No",
+                "QT-${
+                    SimpleDateFormat(
+                        "yyyyMMdd-HHmm",
+                        Locale.getDefault()
+                    ).format(Date())
+                }"
+            )
+
+        val d =
+            edit(
+                "Date",
+                now()
+            )
+
+        val c =
+            edit("Customer")
+
+        val phone =
+            edit("Mobile")
+
+        val size =
+            edit("System Size kW")
+
+        val panel =
+            edit("Panel / Quantity")
+
+        val inv =
+            edit("Inverter")
+
+        val structure =
+            edit("Structure")
+
+        val install =
+            edit("Installation charges ₹")
+
+        val cable =
+            edit("Cable / Accessories ₹")
+
+        val transport =
+            edit("Transport ₹")
+
+        val discount =
+            edit("Discount ₹")
+
+        val gst =
+            edit(
+                "GST %",
+                "18"
+            )
+
+        button(
+            "Generate PDF + Share"
+        ) {
+
+            val sub =
+                (install.text.toString()
+                    .toDoubleOrNull()
+                    ?: 0.0) +
+                (cable.text.toString()
+                    .toDoubleOrNull()
+                    ?: 0.0) +
+                (transport.text.toString()
+                    .toDoubleOrNull()
+                    ?: 0.0)
+
+            val total =
+                (
+                    sub -
+                    (
+                        discount.text.toString()
+                            .toDoubleOrNull()
+                            ?: 0.0
+                    )
+                ) *
+                (
+                    1 +
+                    (
+                        gst.text.toString()
+                            .toDoubleOrNull()
+                            ?: 0.0
+                    ) / 100
+                )
+
+            sharePdf(
+                "QUOTATION",
+                listOf(
+                    "No: ${no.text}",
+                    "Date: ${d.text}",
+                    "Customer: ${c.text}",
+                    "Mobile: ${phone.text}",
+                    "System: ${size.text} kW",
+                    "Panel: ${panel.text}",
+                    "Inverter: ${inv.text}",
+                    "Structure: ${structure.text}",
+                    "Installation: ${money(install.text.toString().toDoubleOrNull() ?: 0.0)}",
+                    "Cable/Accessories: ${money(cable.text.toString().toDoubleOrNull() ?: 0.0)}",
+                    "Transport: ${money(transport.text.toString().toDoubleOrNull() ?: 0.0)}",
+                    "Discount: ${money(discount.text.toString().toDoubleOrNull() ?: 0.0)}",
+                    "GST: ${gst.text}%",
+                    "Grand Total: ${money(total)}",
+                    "Terms: Quotation valid for 15 days."
+                )
+            )
+        }
+    }
+
+    private fun invoiceScreen() {
+
+        setup(
+            "Tax Invoice",
+            ::billingMenu
+        )
+
+        val no =
+            edit(
+                "Invoice No",
+                "INV-${
+                    SimpleDateFormat(
+                        "yyyyMMdd-HHmm",
+                        Locale.getDefault()
+                    ).format(Date())
+                }"
+            )
+
+        val c =
+            edit("Customer")
+
+        val phone =
+            edit("Mobile")
+
+        val desc =
+            edit("Product / Service")
+
+        val qty =
+            edit(
+                "Quantity",
+                "1"
+            )
+
+        val rate =
+            edit("Rate ₹")
+
+        val gst =
+            edit(
+                "GST %",
+                "18"
+            )
+
+        val paid =
+            edit("Paid ₹")
+
+        button(
+            "Generate Invoice PDF + Share"
+        ) {
+
+            val base =
+                (
+                    qty.text.toString()
+                        .toDoubleOrNull()
+                        ?: 1.0
+                ) *
+                (
+                    rate.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0
+                )
+
+            val total =
+                base *
+                (
+                    1 +
+                    (
+                        gst.text.toString()
+                            .toDoubleOrNull()
+                            ?: 0.0
+                    ) / 100
+                )
+
+            sharePdf(
+                "TAX INVOICE",
+                listOf(
+                    "Invoice No: ${no.text}",
+                    "Customer: ${c.text}",
+                    "Mobile: ${phone.text}",
+                    "Item: ${desc.text}",
+                    "Qty: ${qty.text}",
+                    "Rate: ${money(rate.text.toString().toDoubleOrNull() ?: 0.0)}",
+                    "GST: ${gst.text}%",
+                    "Grand Total: ${money(total)}",
+                    "Paid: ${money(paid.text.toString().toDoubleOrNull() ?: 0.0)}",
+                    "Balance: ${money(total - (paid.text.toString().toDoubleOrNull() ?: 0.0))}",
+                    "For EDISON SOLAR • 6383287878"
+                )
+            )
+        }
+    }
+
+    private fun paymentScreen() {
+
+        setup(
+            "Payment Collection",
+            ::billingMenu
+        )
+
+        val c =
+            edit("Customer")
+
+        val amount =
+            edit("Payment ₹")
+
+        val mode =
+            edit(
+                "Mode (UPI/Cash/Bank)",
+                "UPI"
+            )
+
+        val date =
+            edit(
+                "Date",
+                now()
+            )
+
+        button(
+            "Save Payment"
+        ) {
+
+            jobs.add(
+                Job(
+                    date.text.toString(),
+                    "Payment",
+                    c.text.toString(),
+                    "",
+                    0.0,
+                    amount.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    0.0,
+                    0.0,
+                    "Payment"
+                )
+            )
+
+            save()
+
+            Toast.makeText(
+                this,
+                "Payment saved • ${mode.text}",
+                Toast.LENGTH_SHORT
+            ).show()
+
+            billingMenu()
+        }
+    }
+
+    private fun reports() {
+
+        setup(
+            "Reports & Charts",
+            ::dashboard
+        )
+
+        val m =
+            jobs.filter {
+                it.date.endsWith(month())
+            }
+
+        val profit =
+            m.sumOf {
+                it.payment -
+                it.expense -
+                it.salary
+            }
+
+        card(
+            "Monthly Profit",
+            money(profit),
+            green
+        )
+
+        card(
+            "Installed kW",
+            String.format(
+                Locale.getDefault(),
+                "%.2f",
+                m.sumOf { it.kw }
+            )
+        )
+
+        card(
+            "Collection",
+            money(
+                m.sumOf { it.payment }
+            )
+        )
+
+        card(
+            "Expenses",
+            money(
+                m.sumOf {
+                    it.expense + it.salary
+                }
+            ),
+            orange
+        )
+
+        val months =
+            recentMonths()
+
+        chart(
+            "Monthly Collection",
+            months,
+            months.map { mm ->
+                jobs.filter {
+                    it.date.endsWith(mm)
+                }.sumOf {
+                    it.payment
+                }
+            },
+            1,
+            ""
+        )
+
+        chart(
+            "Monthly Expenses",
+            months,
+            months.map { mm ->
+                jobs.filter {
+                    it.date.endsWith(mm)
+                }.sumOf {
+                    it.expense + it.salary
+                }
+            },
+            1,
+            ""
+        )
+
+        chart(
+            "Monthly Profit",
+            months,
+            months.map { mm ->
+                jobs.filter {
+                    it.date.endsWith(mm)
+                }.sumOf {
+                    it.payment -
+                    it.expense -
+                    it.salary
+                }
+            },
+            1,
+            ""
+        )
+
+        val companyNames =
+            companies.map {
+                it.name
+            }
+
+        chart(
+            "Company-wise Profit",
+            companyNames,
+            companyNames.map { co ->
+                jobs.filter {
+                    it.company == co
+                }.sumOf {
+                    it.payment -
+                    it.expense -
+                    it.salary
+                }
+            },
+            0,
+            ""
+        )
+
+        val kLabels =
+            listOf(
+                "1–2 kW",
+                "3–5 kW",
+                "6–10 kW",
+                "10+ kW"
+            )
+
+        val kVals =
+            listOf(
+                jobs.count {
+                    it.kw in 1.0..2.99
+                }.toDouble(),
+
+                jobs.count {
+                    it.kw in 3.0..5.99
+                }.toDouble(),
+
+                jobs.count {
+                    it.kw in 6.0..10.0
+                }.toDouble(),
+
+                jobs.count {
+                    it.kw > 10.0
+                }.toDouble()
+            )
+
+        chart(
+            "System Size Distribution",
+            kLabels,
+            kVals,
+            2
+        )
+
+        val paid =
+            customers.count {
+                it.pending <= 0.0
+            }.toDouble()
+
+        val pending =
+            customers.count {
+                it.pending > 0.0
+            }.toDouble()
+
+        chart(
+            "Customer Payment Status",
+            listOf(
+                "Paid",
+                "Pending"
+            ),
+            listOf(
+                paid,
+                pending
+            ),
+            2
+        )
+
+        tv(
+            "Date-wise history",
+            18f,
+            true
+        )
+
+        m.groupBy {
+            it.date
+        }
+            .toSortedMap()
+            .entries
+            .reversed()
+            .forEach {
+
+                val x = it.value
+
+                tv(
+                    "${it.key}: " +
+                    String.format(
+                        Locale.getDefault(),
+                        "%.2f",
+                        x.sumOf { j -> j.kw }
+                    ) +
+                    " kW • " +
+                    "${money(x.sumOf { j -> j.payment })} collection • " +
+                    "Profit ${money(x.sumOf { j -> j.payment - j.expense - j.salary })}"
+                )
+            }
+
+        button(
+            "📤 Export CSV"
+        ) {
+            exportCsv()
+        }
+    }
+
+    private fun stockScreen() {
+
+        setup(
+            "Material Stock",
+            ::dashboard
+        )
+
+        stocks.forEach {
+
+            tv(
+                "${it.name} • ${it.qty} ${it.unit}",
+                17f,
+                true
+            )
+        }
+
+        val n =
+            edit("Item name")
+
+        val q =
+            edit("Quantity")
+
+        val u =
+            edit(
+                "Unit",
+                "Nos"
+            )
+
+        button(
+            "＋ Add Stock"
+        ) {
+
+            stocks.add(
+                Stock(
+                    n.text.toString(),
+                    q.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    u.text.toString()
+                )
+            )
+
+            save()
+
+            stockScreen()
+        }
+    }
+
+    private fun workerScreen() {
+
+        setup(
+            "Worker Management",
+            ::dashboard
+        )
+
+        workers.forEach {
+
+            tv(
+                "${it.name} • ${it.days} days • " +
+                "Salary ${money(it.salary)} • " +
+                "Advance ${money(it.advance)}"
+            )
+        }
+
+        val n =
+            edit("Worker name")
+
+        val d =
+            edit("Days")
+
+        val s =
+            edit("Salary ₹")
+
+        val a =
+            edit("Advance ₹")
+
+        button(
+            "＋ Add Worker"
+        ) {
+
+            workers.add(
+                Worker(
+                    n.text.toString(),
+                    d.text.toString()
+                        .toIntOrNull()
+                        ?: 0,
+                    s.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    a.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0
+                )
+            )
+
+            save()
+
+            workerScreen()
+        }
+    }
+
+    private fun remindersScreen() {
+
+        setup(
+            "Reminders",
+            ::dashboard
+        )
+
+        reminders.forEach {
+
+            tv(
+                "🔔 ${it.title}\n" +
+                "${it
