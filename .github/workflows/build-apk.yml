@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -25,31 +25,44 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extract Edison Solar Project
+      - name: Extract Project
         run: |
           unzip -o EdisonSolarProfessionalV2_Voice_FIXED.zip -d extracted
 
-      - name: Find Android Project
+      - name: Find Project
         run: |
-          echo "Searching for Gradle project..."
           PROJECT_DIR=$(find extracted -name "settings.gradle.kts" -type f -print -quit | xargs dirname)
           echo "PROJECT_DIR=$PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-
-          echo "Project files:"
-          ls -la "$PROJECT_DIR"
-
-          test -f "$PROJECT_DIR/settings.gradle.kts"
-          test -f "$PROJECT_DIR/build.gradle.kts"
-          test -f "$PROJECT_DIR/app/build.gradle.kts"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          gradle assembleDebug --stacktrace
+          set +e
+          gradle assembleDebug --stacktrace --console=plain 2>&1 | tee build.log
+          RESULT=${PIPESTATUS[0]}
+
+          echo ""
+          echo "===================================="
+          echo "KOTLIN COMPILER ERRORS"
+          echo "===================================="
+
+          grep -n -E "MainActivity.kt:|e: |error:" build.log || true
+
+          echo "===================================="
+
+          exit $RESULT
+
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EdisonSolar-Build-Log
+          path: ${{ env.PROJECT_DIR }}/build.log
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: EdisonSolar-Professional-V2-APK
-          path: "${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk"
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
