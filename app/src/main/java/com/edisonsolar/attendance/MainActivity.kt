@@ -1,13 +1,22 @@
 package com.edisonsolar.attendance
 
-import android.app.*
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Color
 import android.os.Bundle
-import android.widget.*
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
 
 data class Worker(
     val id: Long,
@@ -27,7 +36,8 @@ class DBHelper(context: Context) :
 
     override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
 
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE workers(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT,
@@ -35,9 +45,11 @@ class DBHelper(context: Context) :
                 salary REAL,
                 type TEXT
             )
-        """.trimIndent())
+            """.trimIndent()
+        )
 
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE attendance(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 worker_id INTEGER,
@@ -48,9 +60,11 @@ class DBHelper(context: Context) :
                 site TEXT,
                 note TEXT
             )
-        """.trimIndent())
+            """.trimIndent()
+        )
 
-        db.execSQL("""
+        db.execSQL(
+            """
             CREATE TABLE advances(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 worker_id INTEGER,
@@ -58,7 +72,8 @@ class DBHelper(context: Context) :
                 amount REAL,
                 note TEXT
             )
-        """.trimIndent())
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(
@@ -66,6 +81,7 @@ class DBHelper(context: Context) :
         oldVersion: Int,
         newVersion: Int
     ) {
+        // Keep existing data
     }
 
     fun workers(): List<Worker> {
@@ -75,17 +91,17 @@ class DBHelper(context: Context) :
         readableDatabase.rawQuery(
             "SELECT * FROM workers ORDER BY name",
             null
-        ).use { c ->
+        ).use { cursor ->
 
-            while (c.moveToNext()) {
+            while (cursor.moveToNext()) {
 
                 result.add(
                     Worker(
-                        c.getLong(0),
-                        c.getString(1),
-                        c.getString(2),
-                        c.getDouble(3),
-                        c.getString(4)
+                        id = cursor.getLong(0),
+                        name = cursor.getString(1) ?: "",
+                        phone = cursor.getString(2) ?: "",
+                        salary = cursor.getDouble(3),
+                        type = cursor.getString(4) ?: "Monthly"
                     )
                 )
             }
@@ -101,17 +117,17 @@ class DBHelper(context: Context) :
         type: String
     ) {
 
-        val v = ContentValues()
+        val values = ContentValues()
 
-        v.put("name", name)
-        v.put("phone", phone)
-        v.put("salary", salary)
-        v.put("type", type)
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("type", type)
 
         writableDatabase.insert(
             "workers",
             null,
-            v
+            values
         )
     }
 
@@ -134,20 +150,20 @@ class DBHelper(context: Context) :
             )
         )
 
-        val v = ContentValues()
+        val values = ContentValues()
 
-        v.put("worker_id", workerId)
-        v.put("date", date)
-        v.put("status", status)
-        v.put("intime", intime)
-        v.put("outtime", outtime)
-        v.put("site", site)
-        v.put("note", note)
+        values.put("worker_id", workerId)
+        values.put("date", date)
+        values.put("status", status)
+        values.put("intime", intime)
+        values.put("outtime", outtime)
+        values.put("site", site)
+        values.put("note", note)
 
         writableDatabase.insert(
             "attendance",
             null,
-            v
+            values
         )
     }
 
@@ -157,11 +173,11 @@ class DBHelper(context: Context) :
         note: String
     ) {
 
-        val v = ContentValues()
+        val values = ContentValues()
 
-        v.put("worker_id", workerId)
+        values.put("worker_id", workerId)
 
-        v.put(
+        values.put(
             "date",
             SimpleDateFormat(
                 "yyyy-MM-dd",
@@ -169,13 +185,13 @@ class DBHelper(context: Context) :
             ).format(Date())
         )
 
-        v.put("amount", amount)
-        v.put("note", note)
+        values.put("amount", amount)
+        values.put("note", note)
 
         writableDatabase.insert(
             "advances",
             null,
-            v
+            values
         )
     }
 
@@ -184,10 +200,10 @@ class DBHelper(context: Context) :
         readableDatabase.rawQuery(
             "SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=?",
             arrayOf(workerId.toString())
-        ).use { c ->
+        ).use { cursor ->
 
-            if (c.moveToFirst()) {
-                return c.getDouble(0)
+            if (cursor.moveToFirst()) {
+                return cursor.getDouble(0)
             }
         }
 
@@ -202,6 +218,9 @@ class MainActivity : Activity() {
 
     private val blue =
         Color.rgb(25, 118, 210)
+
+    private val darkBlue =
+        Color.rgb(13, 71, 161)
 
     private val lightBlue =
         Color.rgb(227, 242, 253)
@@ -234,7 +253,10 @@ class MainActivity : Activity() {
             "⚡ EDISON\n$title"
 
         header.textSize = 21f
-        header.setTextColor(Color.WHITE)
+
+        header.setTextColor(
+            Color.WHITE
+        )
 
         header.setPadding(
             16,
@@ -279,25 +301,32 @@ class MainActivity : Activity() {
         val nav =
             LinearLayout(this)
 
+        nav.orientation =
+            LinearLayout.HORIZONTAL
+
         nav.setBackgroundColor(
             lightBlue
         )
 
-        listOf(
-            "HOME",
-            "WORKERS",
-            "ATTENDANCE",
-            "SALARY"
-        ).forEach {
+        val buttons =
+            listOf(
+                "HOME",
+                "WORKERS",
+                "ATTENDANCE",
+                "SALARY"
+            )
+
+        buttons.forEach { buttonText ->
 
             val b =
                 Button(this)
 
-            b.text = it
+            b.text =
+                buttonText
 
             b.setOnClickListener {
 
-                when (it.text) {
+                when (b.text.toString()) {
 
                     "HOME" ->
                         home()
@@ -356,7 +385,16 @@ class MainActivity : Activity() {
 
                 textSize = 25f
 
-                setTextColor(blue)
+                setTextColor(
+                    blue
+                )
+
+                setPadding(
+                    0,
+                    0,
+                    0,
+                    20
+                )
             }
         )
 
@@ -364,11 +402,19 @@ class MainActivity : Activity() {
             TextView(this).apply {
 
                 text =
-                    "\nWorkers: ${db.workers().size}\n\n" +
-                    "🟢 Present\n" +
-                    "🔴 Absent\n" +
-                    "🟡 Half Day\n\n" +
-                    "Salary & Advance management"
+                    """
+                    👷 Workers: ${db.workers().size}
+
+                    🟢 Present
+                    🔴 Absent
+                    🟡 Half Day
+
+                    💰 Salary & Advance Management
+
+                    📍 Site / Customer Details
+
+                    📝 Attendance Notes
+                    """.trimIndent()
 
                 textSize = 18f
             }
@@ -376,7 +422,25 @@ class MainActivity : Activity() {
 
         content.addView(
             button("＋ ADD WORKER") {
+                addWorker()
+            }
+        )
+
+        content.addView(
+            button("👷 VIEW WORKERS") {
                 workers()
+            }
+        )
+
+        content.addView(
+            button("📅 TODAY ATTENDANCE") {
+                attendance()
+            }
+        )
+
+        content.addView(
+            button("💰 SALARY & ADVANCE") {
+                salary()
             }
         )
 
@@ -394,7 +458,23 @@ class MainActivity : Activity() {
             }
         )
 
-        db.workers().forEach { worker ->
+        val workerList =
+            db.workers()
+
+        if (workerList.isEmpty()) {
+
+            content.addView(
+                TextView(this).apply {
+
+                    text =
+                        "\nNo workers added yet."
+
+                    textSize = 18f
+                }
+            )
+        }
+
+        workerList.forEach { worker ->
 
             val box =
                 LinearLayout(this)
@@ -419,8 +499,11 @@ class MainActivity : Activity() {
             text.text =
                 """
                 👷 ${worker.name}
+
                 📱 ${worker.phone}
+
                 💰 Salary: ₹${worker.salary}
+
                 Type: ${worker.type}
                 """.trimIndent()
 
@@ -430,12 +513,30 @@ class MainActivity : Activity() {
 
             box.addView(
                 button("✏️ ATTENDANCE / EDIT") {
-
                     attendanceFor(worker)
                 }
             )
 
+            box.addView(
+                button("＋ ADD ADVANCE") {
+                    addAdvance(worker)
+                }
+            )
+
             content.addView(box)
+
+            val space =
+                TextView(this)
+
+            space.text = ""
+
+            content.addView(
+                space,
+                LinearLayout.LayoutParams(
+                    -1,
+                    10
+                )
+            )
         }
 
         setContentView(root)
@@ -461,13 +562,17 @@ class MainActivity : Activity() {
         phone.hint =
             "Mobile Number"
 
+        phone.inputType =
+            2
+
         val salary =
             EditText(this)
 
         salary.hint =
             "Salary"
 
-        salary.inputType = 2
+        salary.inputType =
+            2
 
         val type =
             EditText(this)
@@ -487,17 +592,38 @@ class MainActivity : Activity() {
 
                     _, _ ->
 
+                val workerName =
+                    name.text.toString().trim()
+
+                if (workerName.isEmpty()) {
+
+                    Toast.makeText(
+                        this,
+                        "Enter worker name",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    return@setPositiveButton
+                }
+
                 db.addWorker(
-                    name.text.toString(),
-                    phone.text.toString(),
+                    workerName,
+                    phone.text.toString().trim(),
                     salary.text.toString()
                         .toDoubleOrNull()
                         ?: 0.0,
                     type.text.toString()
+                        .trim()
                         .ifBlank {
                             "Monthly"
                         }
                 )
+
+                Toast.makeText(
+                    this,
+                    "Worker added",
+                    Toast.LENGTH_SHORT
+                ).show()
 
                 workers()
             }
@@ -526,17 +652,37 @@ class MainActivity : Activity() {
                     "📅 $date"
 
                 textSize = 20f
+
+                setTextColor(
+                    blue
+                )
             }
         )
 
-        db.workers().forEach {
+        val workerList =
+            db.workers()
+
+        if (workerList.isEmpty()) {
+
+            content.addView(
+                TextView(this).apply {
+
+                    text =
+                        "\nFirst add workers."
+
+                    textSize = 18f
+                }
+            )
+        }
+
+        workerList.forEach { worker ->
 
             content.addView(
                 button(
-                    "👷 ${it.name} — Mark / Edit"
+                    "👷 ${worker.name} — Mark / Edit"
                 ) {
 
-                    attendanceFor(it)
+                    attendanceFor(worker)
                 }
             )
         }
@@ -578,13 +724,13 @@ class MainActivity : Activity() {
             EditText(this)
 
         intime.hint =
-            "In Time"
+            "In Time - example 09:00 AM"
 
         val outtime =
             EditText(this)
 
         outtime.hint =
-            "Out Time"
+            "Out Time - example 06:00 PM"
 
         val site =
             EditText(this)
@@ -641,13 +787,29 @@ class MainActivity : Activity() {
         val root =
             layout("Salary & Advance")
 
-        db.workers().forEach {
+        val workerList =
+            db.workers()
+
+        if (workerList.isEmpty()) {
+
+            content.addView(
+                TextView(this).apply {
+
+                    text =
+                        "No workers added yet."
+
+                    textSize = 18f
+                }
+            )
+        }
+
+        workerList.forEach { worker ->
 
             val advance =
-                db.advance(it.id)
+                db.advance(worker.id)
 
             val balance =
-                it.salary - advance
+                worker.salary - advance
 
             val box =
                 LinearLayout(this)
@@ -671,11 +833,13 @@ class MainActivity : Activity() {
 
                     text =
                         """
-                        👷 ${it.name}
-                        
-                        Salary: ₹${it.salary}
-                        Advance: ₹$advance
-                        Balance: ₹$balance
+                        👷 ${worker.name}
+
+                        💰 Salary: ₹${worker.salary}
+
+                        💸 Advance: ₹$advance
+
+                        💵 Balance: ₹$balance
                         """.trimIndent()
 
                     textSize = 18f
@@ -684,12 +848,24 @@ class MainActivity : Activity() {
 
             box.addView(
                 button("＋ ADD ADVANCE") {
-
-                    addAdvance(it)
+                    addAdvance(worker)
                 }
             )
 
             content.addView(box)
+
+            val space =
+                TextView(this)
+
+            space.text = ""
+
+            content.addView(
+                space,
+                LinearLayout.LayoutParams(
+                    -1,
+                    10
+                )
+            )
         }
 
         setContentView(root)
@@ -711,7 +887,8 @@ class MainActivity : Activity() {
         amount.hint =
             "Advance Amount"
 
-        amount.inputType = 2
+        amount.inputType =
+            2
 
         val note =
             EditText(this)
@@ -731,13 +908,32 @@ class MainActivity : Activity() {
                 "SAVE"
             ) { _, _ ->
 
-                db.addAdvance(
-                    worker.id,
+                val value =
                     amount.text.toString()
                         .toDoubleOrNull()
-                        ?: 0.0,
+
+                if (value == null || value <= 0) {
+
+                    Toast.makeText(
+                        this,
+                        "Enter valid amount",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    return@setPositiveButton
+                }
+
+                db.addAdvance(
+                    worker.id,
+                    value,
                     note.text.toString()
                 )
+
+                Toast.makeText(
+                    this,
+                    "Advance saved",
+                    Toast.LENGTH_SHORT
+                ).show()
 
                 salary()
             }
