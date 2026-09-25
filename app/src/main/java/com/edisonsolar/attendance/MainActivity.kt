@@ -1,698 +1,69 @@
-package com.edisonsolar.attendance
+package com.edisonsolar.businesspro
 
 import android.Manifest
-import android.app.Activity
-import android.app.AlertDialog
-import android.app.DatePickerDialog
-import android.content.ContentValues
-import android.content.Context
-import android.content.Intent
+import android.app.*
+import android.content.*
 import android.content.pm.PackageManager
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
 import android.graphics.Color
-import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
+import android.provider.Settings
+import android.view.*
 import android.widget.*
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-
-data class Worker(
-    val id: Long,
-    val name: String,
-    val phone: String,
-    val salary: Double,
-    val paymentType: String,
-    val role: String
-)
-
-data class AttendanceRecord(
-    val status: String = "Absent",
-    val intime: String = "",
-    val outtime: String = "",
-    val site: String = "",
-    val note: String = "",
-    val latitude: Double = 0.0,
-    val longitude: Double = 0.0
-)
-
-data class Advance(
-    val id: Long,
-    val workerId: Long,
-    val amount: Double,
-    val date: String,
-    val note: String
-)
-
-class DBHelper(context: Context) :
-    android.database.sqlite.SQLiteOpenHelper(
-        context,
-        "edison.db",
-        null,
-        6
-    ) {
-
-    override fun onCreate(
-        db: android.database.sqlite.SQLiteDatabase
-    ) {
-        db.execSQL(
-            """
-            CREATE TABLE workers(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                phone TEXT,
-                salary REAL DEFAULT 0,
-                payment_type TEXT DEFAULT 'Daily',
-                role TEXT DEFAULT ''
-            )
-            """.trimIndent()
-        )
-
-        db.execSQL(
-            """
-            CREATE TABLE attendance(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                worker_id INTEGER NOT NULL,
-                date TEXT NOT NULL,
-                status TEXT DEFAULT 'Absent',
-                intime TEXT DEFAULT '',
-                outtime TEXT DEFAULT '',
-                site TEXT DEFAULT '',
-                note TEXT DEFAULT '',
-                latitude REAL DEFAULT 0,
-                longitude REAL DEFAULT 0,
-                UNIQUE(worker_id,date)
-            )
-            """.trimIndent()
-        )
-
-        db.execSQL(
-            """
-            CREATE TABLE advances(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                worker_id INTEGER NOT NULL,
-                amount REAL DEFAULT 0,
-                date TEXT,
-                note TEXT DEFAULT ''
-            )
-            """.trimIndent()
-        )
-    }
-
-    override fun onUpgrade(
-        db: android.database.sqlite.SQLiteDatabase,
-        oldVersion: Int,
-        newVersion: Int
-    ) {
-        if (oldVersion < 5) {
-            try {
-                db.execSQL(
-                    "ALTER TABLE workers ADD COLUMN payment_type TEXT DEFAULT 'Daily'"
-                )
-            } catch (_: Exception) {
-            }
-
-            try {
-                db.execSQL(
-                    "ALTER TABLE workers ADD COLUMN role TEXT DEFAULT ''"
-                )
-            } catch (_: Exception) {
-            }
-        }
-
-        if (oldVersion < 6) {
-            try {
-                db.execSQL(
-                    "ALTER TABLE attendance ADD COLUMN latitude REAL DEFAULT 0"
-                )
-            } catch (_: Exception) {
-            }
-
-            try {
-                db.execSQL(
-                    "ALTER TABLE attendance ADD COLUMN longitude REAL DEFAULT 0"
-                )
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    fun workers(): MutableList<Worker> {
-        val list = mutableListOf<Worker>()
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT id,name,phone,salary,
-                   COALESCE(payment_type,'Daily'),
-                   COALESCE(role,'')
-            FROM workers
-            ORDER BY name
-            """.trimIndent(),
-            null
-        )
-
-        while (c.moveToNext()) {
-            list.add(
-                Worker(
-                    c.getLong(0),
-                    c.getString(1) ?: "",
-                    c.getString(2) ?: "",
-                    c.getDouble(3),
-                    c.getString(4) ?: "Daily",
-                    c.getString(5) ?: ""
-                )
-            )
-        }
-
-        c.close()
-        return list
-    }
-
-    fun addWorker(
-        name: String,
-        phone: String,
-        salary: Double,
-        type: String,
-        role: String
-    ) {
-        val v = ContentValues()
-
-        v.put("name", name)
-        v.put("phone", phone)
-        v.put("salary", salary)
-        v.put("payment_type", type)
-        v.put("role", role)
-
-        writableDatabase.insert(
-            "workers",
-            null,
-            v
-        )
-    }
-
-    fun updateWorker(
-        id: Long,
-        name: String,
-        phone: String,
-        salary: Double,
-        type: String,
-        role: String
-    ) {
-        val v = ContentValues()
-
-        v.put("name", name)
-        v.put("phone", phone)
-        v.put("salary", salary)
-        v.put("payment_type", type)
-        v.put("role", role)
-
-        writableDatabase.update(
-            "workers",
-            v,
-            "id=?",
-            arrayOf(id.toString())
-        )
-    }
-
-    fun deleteWorker(id: Long) {
-        writableDatabase.delete(
-            "attendance",
-            "worker_id=?",
-            arrayOf(id.toString())
-        )
-
-        writableDatabase.delete(
-            "advances",
-            "worker_id=?",
-            arrayOf(id.toString())
-        )
-
-        writableDatabase.delete(
-            "workers",
-            "id=?",
-            arrayOf(id.toString())
-        )
-    }
-
-    fun getAttendance(
-        workerId: Long,
-        date: String
-    ): AttendanceRecord? {
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT status,intime,outtime,site,note,
-                   latitude,longitude
-            FROM attendance
-            WHERE worker_id=? AND date=?
-            LIMIT 1
-            """.trimIndent(),
-            arrayOf(
-                workerId.toString(),
-                date
-            )
-        )
-
-        if (!c.moveToFirst()) {
-            c.close()
-            return null
-        }
-
-        val result = AttendanceRecord(
-            c.getString(0) ?: "Absent",
-            c.getString(1) ?: "",
-            c.getString(2) ?: "",
-            c.getString(3) ?: "",
-            c.getString(4) ?: "",
-            c.getDouble(5),
-            c.getDouble(6)
-        )
-
-        c.close()
-
-        return result
-    }
-
-    fun attendanceForDate(
-        date: String
-    ): HashMap<Long, AttendanceRecord> {
-
-        val map =
-            HashMap<Long, AttendanceRecord>()
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT worker_id,status,intime,outtime,
-                   site,note,latitude,longitude
-            FROM attendance
-            WHERE date=?
-            """.trimIndent(),
-            arrayOf(date)
-        )
-
-        while (c.moveToNext()) {
-
-            map[c.getLong(0)] =
-                AttendanceRecord(
-                    c.getString(1) ?: "Absent",
-                    c.getString(2) ?: "",
-                    c.getString(3) ?: "",
-                    c.getString(4) ?: "",
-                    c.getString(5) ?: "",
-                    c.getDouble(6),
-                    c.getDouble(7)
-                )
-        }
-
-        c.close()
-
-        return map
-    }
-
-    fun saveAttendance(
-        workerId: Long,
-        date: String,
-        record: AttendanceRecord
-    ) {
-        val v = ContentValues()
-
-        v.put("worker_id", workerId)
-        v.put("date", date)
-        v.put("status", record.status)
-        v.put("intime", record.intime)
-        v.put("outtime", record.outtime)
-        v.put("site", record.site)
-        v.put("note", record.note)
-        v.put("latitude", record.latitude)
-        v.put("longitude", record.longitude)
-
-        writableDatabase.insertWithOnConflict(
-            "attendance",
-            null,
-            v,
-            android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
-        )
-    }
-
-    fun advances(
-        workerId: Long
-    ): MutableList<Advance> {
-
-        val list =
-            mutableListOf<Advance>()
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT id,worker_id,amount,date,note
-            FROM advances
-            WHERE worker_id=?
-            ORDER BY date DESC,id DESC
-            """.trimIndent(),
-            arrayOf(workerId.toString())
-        )
-
-        while (c.moveToNext()) {
-            list.add(
-                Advance(
-                    c.getLong(0),
-                    c.getLong(1),
-                    c.getDouble(2),
-                    c.getString(3) ?: "",
-                    c.getString(4) ?: ""
-                )
-            )
-        }
-
-        c.close()
-
-        return list
-    }
-
-    fun advanceTotal(
-        workerId: Long
-    ): Double {
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT COALESCE(SUM(amount),0)
-            FROM advances
-            WHERE worker_id=?
-            """.trimIndent(),
-            arrayOf(workerId.toString())
-        )
-
-        val total =
-            if (c.moveToFirst()) {
-                c.getDouble(0)
-            } else {
-                0.0
-            }
-
-        c.close()
-
-        return total
-    }
-
-    fun addAdvance(
-        workerId: Long,
-        amount: Double,
-        date: String,
-        note: String
-    ) {
-        val v = ContentValues()
-
-        v.put("worker_id", workerId)
-        v.put("amount", amount)
-        v.put("date", date)
-        v.put("note", note)
-
-        writableDatabase.insert(
-            "advances",
-            null,
-            v
-        )
-    }
-
-    fun updateAdvance(
-        id: Long,
-        workerId: Long,
-        amount: Double,
-        date: String,
-        note: String
-    ) {
-        val v = ContentValues()
-
-        v.put("amount", amount)
-        v.put("date", date)
-        v.put("note", note)
-
-        writableDatabase.update(
-            "advances",
-            v,
-            "id=? AND worker_id=?",
-            arrayOf(
-                id.toString(),
-                workerId.toString()
-            )
-        )
-    }
-
-    fun deleteAdvance(
-        id: Long,
-        workerId: Long
-    ) {
-        writableDatabase.delete(
-            "advances",
-            "id=? AND worker_id=?",
-            arrayOf(
-                id.toString(),
-                workerId.toString()
-            )
-        )
-    }
-
-    fun monthCounts(
-        workerId: Long,
-        year: Int,
-        month: Int
-    ): Pair<Int, Int> {
-
-        val prefix =
-            String.format(
-                Locale.getDefault(),
-                "%04d-%02d-",
-                year,
-                month + 1
-            )
-
-        var present = 0
-        var half = 0
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT status
-            FROM attendance
-            WHERE worker_id=?
-            AND date LIKE ?
-            """.trimIndent(),
-            arrayOf(
-                workerId.toString(),
-                "$prefix%"
-            )
-        )
-
-        while (c.moveToNext()) {
-
-            when (c.getString(0)) {
-
-                "Present" -> {
-                    present++
-                }
-
-                "Half Day" -> {
-                    half++
-                }
-            }
-        }
-
-        c.close()
-
-        return Pair(
-            present,
-            half
-        )
-    }
-}
+import java.util.*
 
 class MainActivity : Activity() {
 
     private lateinit var db: DBHelper
     private lateinit var root: LinearLayout
-    private lateinit var body: LinearLayout
 
-    private var selectedDate =
-        todayDate()
+    private val blue = Color.rgb(25, 118, 210)
+    private val darkBlue = Color.rgb(13, 71, 161)
+    private val lightBlue = Color.rgb(232, 245, 253)
 
-    companion object {
-        const val GPS_REQUEST = 501
-    }
-
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         db = DBHelper(this)
 
-        home()
+        showDashboard()
     }
 
-    private fun dp(
-        value: Int
-    ): Int {
-        return (
-            value *
-                resources.displayMetrics.density
-            ).toInt()
+    // ---------------------------------------------------------
+    // BASIC UI
+    // ---------------------------------------------------------
+
+    private fun baseLayout(): LinearLayout {
+
+        root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setBackgroundColor(Color.WHITE)
+
+        return root
     }
 
-    private fun money(
-        value: Double
-    ): String {
-        return String.format(
-            Locale.getDefault(),
-            "%.0f",
-            value
-        )
-    }
+    private fun title(text: String): TextView {
 
-    private fun makeScreen(
-        title: String
-    ) {
+        val t = TextView(this)
 
-        root =
-            LinearLayout(this)
-
-        root.orientation =
-            LinearLayout.VERTICAL
-
-        root.setBackgroundColor(
-            Color.WHITE
-        )
-
-        val header =
-            TextView(this)
-
-        header.text =
-            title
-
-        header.textSize =
-            20f
-
-        header.setTextColor(
-            Color.WHITE
-        )
-
-        header.gravity =
-            Gravity.CENTER_VERTICAL
-
-        header.setPadding(
-            dp(14),
-            dp(12),
-            dp(14),
-            dp(12)
-        )
-
-        header.setBackgroundColor(
-            Color.rgb(
-                25,
-                118,
-                210
-            )
-        )
-
-        root.addView(
-            header,
-            LinearLayout.LayoutParams(
-                -1,
-                -2
-            )
-        )
-
-        val scroll =
-            ScrollView(this)
-
-        body =
-            LinearLayout(this)
-
-        body.orientation =
-            LinearLayout.VERTICAL
-
-        body.setPadding(
-            dp(10),
-            dp(10),
-            dp(10),
-            dp(10)
-        )
-
-        scroll.addView(body)
-
-        root.addView(
-            scroll,
-            LinearLayout.LayoutParams(
-                -1,
-                0,
-                1f
-            )
-        )
-
-        root.addView(
-            bottomBar()
-        )
-
-        setContentView(root)
-    }
-
-    private fun label(
-        value: String,
-        size: Float = 15f
-    ): TextView {
-
-        val t =
-            TextView(this)
-
-        t.text =
-            value
-
-        t.textSize =
-            size
-
-        t.setTextColor(
-            Color.DKGRAY
-        )
-
-        t.setPadding(
-            dp(6),
-            dp(5),
-            dp(6),
-            dp(5)
-        )
+        t.text = text
+        t.textSize = 22f
+        t.setTextColor(Color.WHITE)
+        t.setPadding(20, 20, 20, 20)
+        t.setBackgroundColor(blue)
 
         return t
     }
 
-    private fun addLabel(
-        value: String,
-        size: Float = 15f
-    ) {
-        body.addView(
-            label(
-                value,
-                size
-            )
-        )
-    }
+    private fun button(text: String, action: () -> Unit): Button {
 
-    private fun makeButton(
-        value: String,
-        action: () -> Unit
-    ): Button {
+        val b = Button(this)
 
-        val b =
-            Button(this)
-
-        b.text =
-            value
-
-        b.textSize =
-            13f
-
-        b.setAllCaps(
-            false
-        )
-
+        b.text = text
+        b.textSize = 15f
         b.setOnClickListener {
             action()
         }
@@ -700,758 +71,586 @@ class MainActivity : Activity() {
         return b
     }
 
-    private fun bottomBar(): LinearLayout {
+    private fun text(text: String, size: Float = 16f): TextView {
 
-        val bar =
-            LinearLayout(this)
+        val t = TextView(this)
 
-        bar.orientation =
-            LinearLayout.HORIZONTAL
+        t.text = text
+        t.textSize = size
+        t.setTextColor(Color.DKGRAY)
+        t.setPadding(16, 12, 16, 12)
 
-        bar.setBackgroundColor(
-            Color.rgb(
-                235,
-                242,
-                250
-            )
-        )
-
-        val a =
-            makeButton("HOME") {
-                home()
-            }
-
-        val b =
-            makeButton("WORKERS") {
-                workers()
-            }
-
-        val c =
-            makeButton("ATTEND") {
-                attendance()
-            }
-
-        val d =
-            makeButton("SALARY") {
-                salary()
-            }
-
-        bar.addView(
-            a,
-            LinearLayout.LayoutParams(
-                0,
-                -2,
-                1f
-            )
-        )
-
-        bar.addView(
-            b,
-            LinearLayout.LayoutParams(
-                0,
-                -2,
-                1f
-            )
-        )
-
-        bar.addView(
-            c,
-            LinearLayout.LayoutParams(
-                0,
-                -2,
-                1f
-            )
-        )
-
-        bar.addView(
-            d,
-            LinearLayout.LayoutParams(
-                0,
-                -2,
-                1f
-            )
-        )
-
-        return bar
+        return t
     }
 
-    private fun home() {
+    private fun edit(hint: String): EditText {
 
-        makeScreen(
-            "EDISON"
-        )
+        val e = EditText(this)
 
-        addLabel(
-            "☀ EDISON SOLAR WORK TRACKER",
-            21f
-        )
+        e.hint = hint
+        e.setPadding(20, 10, 20, 10)
 
-        addLabel(
-            "Workers • Attendance • Site • Salary"
-        )
+        return e
+    }
 
-        body.addView(
-            makeButton(
-                "👷 WORKERS"
-            ) {
-                workers()
+    private fun scroll(): ScrollView {
+
+        val s = ScrollView(this)
+
+        s.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(12, 12, 12, 12)
             }
         )
 
-        body.addView(
-            makeButton(
-                "📅 ATTENDANCE"
-            ) {
-                attendance()
-            }
-        )
+        return s
+    }
 
-        body.addView(
-            makeButton(
-                "📍 SITE SUMMARY"
-            ) {
-                siteSummary()
-            }
-        )
+    private fun addSpace(parent: LinearLayout) {
 
-        body.addView(
-            makeButton(
-                "💰 SALARY / PENDING"
-            ) {
-                salary()
-            }
-        )
+        val space = Space(this)
 
-        body.addView(
-            makeButton(
-                "💵 ADVANCE"
-            ) {
-                advanceSelect()
-            }
-        )
-
-        body.addView(
-            makeButton(
-                "📊 ALL WORKERS REPORT"
-            ) {
-                allWorkersReport()
-            }
+        parent.addView(
+            space,
+            LinearLayout.LayoutParams(
+                1,
+                10
+            )
         )
     }
 
-    private fun workers() {
+    // ---------------------------------------------------------
+    // DASHBOARD
+    // ---------------------------------------------------------
 
-        makeScreen(
-            "👷 WORKERS"
+    private fun showDashboard() {
+
+        root = baseLayout()
+
+        root.addView(title("EDISON BUSINESS PRO"))
+
+        root.addView(
+            text(
+                "Solar Business Management",
+                16f
+            )
         )
 
-        addLabel(
-            "WORKERS",
-            19f
+        val s = ScrollView(this)
+
+        val content = LinearLayout(this)
+
+        content.orientation = LinearLayout.VERTICAL
+        content.setPadding(12, 12, 12, 20)
+
+        s.addView(content)
+
+        root.addView(
+            s,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
         )
 
-        body.addView(
-            makeButton(
-                "➕ ADD WORKER"
-            ) {
-                workerDialog(null)
+        val projects = db.projectCount()
+        val companies = db.companyCount()
+        val collection = db.totalCollection()
+        val expenses = db.totalExpenses()
+        val balance = db.totalBalance()
+
+        content.addView(
+            text(
+                "📊 DASHBOARD",
+                21f
+            )
+        )
+
+        content.addView(
+            text(
+                "🏢 Companies : $companies\n" +
+                "📁 Total Projects : $projects\n" +
+                "💰 Collection : ₹${money(collection)}\n" +
+                "💸 Expenses : ₹${money(expenses)}\n" +
+                "⏳ Pending : ₹${money(balance)}",
+                18f
+            )
+        )
+
+        addSpace(content)
+
+        content.addView(
+            button("🏢 Companies") {
+                showCompanies()
             }
         )
 
-        val list =
-            db.workers()
+        content.addView(
+            button("📁 Projects") {
+                showProjects()
+            }
+        )
 
-        if (list.isEmpty()) {
+        content.addView(
+            button("💰 Payment Collection") {
+                showPayments()
+            }
+        )
 
-            addLabel(
-                "No workers added."
-            )
+        content.addView(
+            button("💸 Expenses") {
+                showExpenses()
+            }
+        )
 
-            return
-        }
+        content.addView(
+            button("📅 Calendar") {
+                showCalendar()
+            }
+        )
 
-        for (w in list) {
+        content.addView(
+            button("📊 Full Report") {
+                showFullReport()
+            }
+        )
 
-            val card =
-                LinearLayout(this)
+        content.addView(
+            button("📲 WhatsApp Report") {
+                shareWhatsApp(buildReport())
+            }
+        )
 
-            card.orientation =
-                LinearLayout.VERTICAL
-
-            card.setPadding(
-                dp(10),
-                dp(8),
-                dp(10),
-                dp(8)
-            )
-
-            card.setBackgroundColor(
-                Color.rgb(
-                    245,
-                    248,
-                    252
-                )
-            )
-
-            card.addView(
-                label(
-                    "👷 ${w.name}",
-                    18f
-                )
-            )
-
-            card.addView(
-                label(
-                    "📱 ${w.phone}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "💼 ${w.role}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "💰 ${w.paymentType} : ₹${money(w.salary)}"
-                )
-            )
-
-            card.addView(
-                makeButton(
-                    "✏ EDIT"
-                ) {
-                    workerDialog(w)
-                }
-            )
-
-            card.addView(
-                makeButton(
-                    "📅 ATTEND"
-                ) {
-                    selectedDate =
-                        todayDate()
-
-                    workerAttendance(w)
-                }
-            )
-
-            card.addView(
-                makeButton(
-                    "💵 ADVANCE"
-                ) {
-                    advanceHistory(w)
-                }
-            )
-
-            card.addView(
-                makeButton(
-                    "🗑 DELETE"
-                ) {
-
-                    AlertDialog.Builder(this)
-                        .setTitle(
-                            "Delete Worker?"
-                        )
-                        .setMessage(
-                            w.name
-                        )
-                        .setNegativeButton(
-                            "NO",
-                            null
-                        )
-                        .setPositiveButton(
-                            "YES"
-                        ) { _, _ ->
-
-                            db.deleteWorker(
-                                w.id
-                            )
-
-                            workers()
-                        }
-                        .show()
-                }
-            )
-
-            body.addView(card)
-
-            body.addView(
-                Space(this),
-                LinearLayout.LayoutParams(
-                    1,
-                    dp(8)
-                )
-            )
-        }
+        setContentView(root)
     }
 
-    private fun workerDialog(
-        old: Worker?
-    ) {
+    // ---------------------------------------------------------
+    // COMPANIES
+    // ---------------------------------------------------------
 
-        val box =
-            LinearLayout(this)
+    private fun showCompanies() {
 
-        box.orientation =
-            LinearLayout.VERTICAL
+        root = baseLayout()
 
-        box.setPadding(
-            dp(12),
-            0,
-            dp(12),
-            0
-        )
+        root.addView(title("🏢 COMPANIES"))
 
-        val name =
-            EditText(this)
-
-        name.hint =
-            "Worker Name"
-
-        name.setText(
-            old?.name ?: ""
-        )
-
-        val phone =
-            EditText(this)
-
-        phone.hint =
-            "Phone"
-
-        phone.setText(
-            old?.phone ?: ""
-        )
-
-        val salary =
-            EditText(this)
-
-        salary.hint =
-            "Salary Amount"
-
-        salary.inputType =
-            2
-
-        salary.setText(
-            if (old == null) {
-                ""
-            } else {
-                old.salary.toString()
+        root.addView(
+            button("➕ Add Company") {
+                companyDialog()
             }
         )
 
-        val type =
-            Spinner(this)
+        val s = ScrollView(this)
 
-        type.adapter =
-            ArrayAdapter(
-                this,
-                android.R.layout.simple_spinner_dropdown_item,
-                arrayOf(
-                    "Daily",
-                    "Monthly"
+        val list = LinearLayout(this)
+
+        list.orientation = LinearLayout.VERTICAL
+        list.setPadding(12, 12, 12, 20)
+
+        s.addView(list)
+
+        val cursor = db.readCompanies()
+
+        while (cursor.moveToNext()) {
+
+            val id = cursor.getInt(0)
+            val name = cursor.getString(1)
+            val phone = cursor.getString(2)
+
+            val card = LinearLayout(this)
+
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(15, 15, 15, 15)
+            card.setBackgroundColor(lightBlue)
+
+            card.addView(
+                text(
+                    "🏢 $name",
+                    19f
                 )
             )
 
-        if (
-            old?.paymentType ==
-            "Monthly"
-        ) {
-            type.setSelection(1)
+            card.addView(
+                text(
+                    "📞 $phone\n" +
+                    "📁 Projects: ${db.companyProjectCount(id)}\n" +
+                    "💰 Collection: ₹${money(db.companyCollection(id))}",
+                    16f
+                )
+            )
+
+            card.addView(
+                button("View Company Report") {
+                    companyReport(id, name)
+                }
+            )
+
+            list.addView(card)
+
+            addSpace(list)
         }
 
-        val role =
-            EditText(this)
+        cursor.close()
 
-        role.hint =
-            "Work Role"
-
-        role.setText(
-            old?.role ?: ""
+        root.addView(
+            s,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
         )
+
+        root.addView(
+            button("⬅ Back") {
+                showDashboard()
+            }
+        )
+
+        setContentView(root)
+    }
+
+    private fun companyDialog() {
+
+        val box = LinearLayout(this)
+
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(30, 10, 30, 10)
+
+        val name = edit("Company Name")
+        val phone = edit("Phone Number")
+        val address = edit("Address")
 
         box.addView(name)
         box.addView(phone)
-        box.addView(salary)
-        box.addView(type)
-        box.addView(role)
+        box.addView(address)
 
-        val dialog =
-            AlertDialog.Builder(this)
-                .setTitle(
-                    if (old == null)
-                        "ADD WORKER"
-                    else
-                        "EDIT WORKER"
-                )
-                .setView(box)
-                .setNegativeButton(
-                    "CANCEL",
-                    null
-                )
-                .setPositiveButton(
-                    "SAVE",
-                    null
-                )
-                .create()
+        AlertDialog.Builder(this)
+            .setTitle("Add Company")
+            .setView(box)
+            .setPositiveButton("SAVE") { _, _ ->
 
-        dialog.setOnShowListener {
+                if (name.text.toString().trim().isNotEmpty()) {
 
-            dialog.getButton(
-                AlertDialog.BUTTON_POSITIVE
-            ).setOnClickListener {
+                    db.addCompany(
+                        name.text.toString(),
+                        phone.text.toString(),
+                        address.text.toString()
+                    )
 
-                val n =
-                    name.text
-                        .toString()
-                        .trim()
-
-                val s =
-                    salary.text
-                        .toString()
-                        .toDoubleOrNull()
-                        ?: 0.0
-
-                val p =
-                    type.selectedItem
-                        .toString()
-
-                val r =
-                    role.text
-                        .toString()
-                        .trim()
-
-                if (n.isEmpty()) {
-
-                    name.error =
-                        "Enter name"
-
-                } else {
-
-                    if (old == null) {
-
-                        db.addWorker(
-                            n,
-                            phone.text.toString(),
-                            s,
-                            p,
-                            r
-                        )
-
-                    } else {
-
-                        db.updateWorker(
-                            old.id,
-                            n,
-                            phone.text.toString(),
-                            s,
-                            p,
-                            r
-                        )
-                    }
-
-                    dialog.dismiss()
-
-                    workers()
+                    showCompanies()
                 }
             }
-        }
-
-        dialog.show()
+            .setNegativeButton("CANCEL", null)
+            .show()
     }
 
-    private fun attendance() {
+    private fun companyReport(
+        companyId: Int,
+        companyName: String
+    ) {
 
-        makeScreen(
-            "📅 ATTENDANCE"
+        val message =
+            "EDISON BUSINESS PRO\n\n" +
+            "COMPANY: $companyName\n\n" +
+            "Total Projects: ${db.companyProjectCount(companyId)}\n" +
+            "Project Value: ₹${money(db.companyProjectValue(companyId))}\n" +
+            "Collection: ₹${money(db.companyCollection(companyId))}\n" +
+            "Pending: ₹${money(db.companyPending(companyId))}\n" +
+            "Expenses: ₹${money(db.companyExpenses(companyId))}"
+
+        AlertDialog.Builder(this)
+            .setTitle(companyName)
+            .setMessage(message)
+            .setPositiveButton("WHATSAPP") { _, _ ->
+                shareWhatsApp(message)
+            }
+            .setNegativeButton("CLOSE", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------
+    // PROJECTS
+    // ---------------------------------------------------------
+
+    private fun showProjects() {
+
+        root = baseLayout()
+
+        root.addView(title("📁 PROJECTS"))
+
+        root.addView(
+            button("➕ Add Project") {
+                projectDialog()
+            }
         )
 
-        val row =
-            LinearLayout(this)
+        val s = ScrollView(this)
 
-        row.orientation =
-            LinearLayout.HORIZONTAL
+        val list = LinearLayout(this)
 
-        val dateText =
-            label(
-                "📅 $selectedDate",
-                17f
+        list.orientation = LinearLayout.VERTICAL
+        list.setPadding(12, 12, 12, 20)
+
+        s.addView(list)
+
+        val cursor = db.readProjects()
+
+        while (cursor.moveToNext()) {
+
+            val id = cursor.getInt(0)
+            val number = cursor.getString(1)
+            val company = cursor.getString(2)
+            val customer = cursor.getString(3)
+            val site = cursor.getString(4)
+            val kw = cursor.getDouble(5)
+            val amount = cursor.getDouble(6)
+            val status = cursor.getString(7)
+
+            val collected = db.projectCollection(id)
+            val balance = amount - collected
+
+            val card = LinearLayout(this)
+
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(15, 15, 15, 15)
+            card.setBackgroundColor(lightBlue)
+
+            card.addView(
+                text(
+                    "$number  |  $status",
+                    20f
+                )
             )
 
-        row.addView(
-            dateText,
+            card.addView(
+                text(
+                    "🏢 $company\n" +
+                    "👤 $customer\n" +
+                    "📍 $site\n" +
+                    "☀️ ${kw} kW\n" +
+                    "💰 Amount: ₹${money(amount)}\n" +
+                    "✅ Collected: ₹${money(collected)}\n" +
+                    "⏳ Balance: ₹${money(balance)}",
+                    16f
+                )
+            )
+
+            card.addView(
+                button("Open Project") {
+                    projectDetails(id)
+                }
+            )
+
+            list.addView(card)
+
+            addSpace(list)
+        }
+
+        cursor.close()
+
+        root.addView(
+            s,
             LinearLayout.LayoutParams(
+                -1,
                 0,
-                -2,
                 1f
             )
         )
 
-        row.addView(
-            makeButton(
-                "CHANGE"
-            ) {
-                pickDate()
+        root.addView(
+            button("⬅ Back") {
+                showDashboard()
             }
         )
 
-        body.addView(row)
-
-        val records =
-            db.attendanceForDate(
-                selectedDate
-            )
-
-        for (w in db.workers()) {
-
-            val saved =
-                records[w.id]
-                    ?: AttendanceRecord()
-
-            attendanceCard(
-                w,
-                saved
-            )
-        }
+        setContentView(root)
     }
 
-    private fun attendanceCard(
-        w: Worker,
-        saved: AttendanceRecord
-    ) {
+    private fun projectDialog() {
 
-        val card =
-            LinearLayout(this)
+        val box = LinearLayout(this)
 
-        card.orientation =
-            LinearLayout.VERTICAL
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(25, 5, 25, 5)
 
-        card.setPadding(
-            dp(10),
-            dp(8),
-            dp(10),
-            dp(8)
-        )
+        val company = edit("Company Name")
+        val customer = edit("Customer Name")
+        val phone = edit("Customer Phone")
+        val site = edit("Site Address")
+        val kw = edit("Solar kW")
+        val amount = edit("Project Amount")
+        val date = edit("Installation Date")
+        val status = edit("Status - Pending / Running / Completed")
 
-        card.setBackgroundColor(
-            Color.rgb(
-                245,
-                248,
-                252
-            )
-        )
+        box.addView(company)
+        box.addView(customer)
+        box.addView(phone)
+        box.addView(site)
+        box.addView(kw)
+        box.addView(amount)
+        box.addView(date)
+        box.addView(status)
 
-        card.addView(
-            label(
-                "👷 ${w.name}",
-                17f
-            )
-        )
+        AlertDialog.Builder(this)
+            .setTitle("New Project")
+            .setView(box)
+            .setPositiveButton("SAVE") { _, _ ->
 
-        val status =
-            Spinner(this)
+                val companyName = company.text.toString()
 
-        status.adapter =
-            ArrayAdapter(
-                this,
-                android.R.layout.simple_spinner_dropdown_item,
-                arrayOf(
-                    "Present",
-                    "Half Day",
-                    "Absent"
-                )
-            )
+                if (companyName.trim().isEmpty()) {
+                    return@setPositiveButton
+                }
 
-        status.setSelection(
-            when (saved.status) {
+                val number = db.nextProjectNumber()
 
-                "Half Day" -> 1
-
-                "Absent" -> 2
-
-                else -> 0
-            }
-        )
-
-        val site =
-            EditText(this)
-
-        site.hint =
-            "Site"
-
-        site.setText(
-            saved.site
-        )
-
-        val note =
-            EditText(this)
-
-        note.hint =
-            "Note"
-
-        note.setText(
-            saved.note
-        )
-
-        val intime =
-            EditText(this)
-
-        intime.hint =
-            "In Time"
-
-        intime.setText(
-            saved.intime
-        )
-
-        val outtime =
-            EditText(this)
-
-        outtime.hint =
-            "Out Time"
-
-        outtime.setText(
-            saved.outtime
-        )
-
-        card.addView(status)
-        card.addView(site)
-        card.addView(note)
-        card.addView(intime)
-        card.addView(outtime)
-
-        card.addView(
-            makeButton(
-                "💾 SAVE ATTENDANCE"
-            ) {
-
-                val record =
-                    AttendanceRecord(
-                        status.selectedItem
-                            .toString(),
-                        intime.text.toString(),
-                        outtime.text.toString(),
-                        site.text.toString(),
-                        note.text.toString(),
-                        saved.latitude,
-                        saved.longitude
-                    )
-
-                db.saveAttendance(
-                    w.id,
-                    selectedDate,
-                    record
-                )
-
-                Toast.makeText(
-                    this,
-                    "${w.name} saved",
-                    Toast.LENGTH_SHORT
-                ).show()
-
-                attendance()
-            }
-        )
-
-        card.addView(
-            makeButton(
-                "📍 SAVE GPS"
-            ) {
-
-                saveGps(
-                    w,
-                    status.selectedItem
-                        .toString(),
+                db.addProject(
+                    number,
+                    companyName,
+                    customer.text.toString(),
+                    phone.text.toString(),
                     site.text.toString(),
-                    note.text.toString(),
-                    intime.text.toString(),
-                    outtime.text.toString()
+                    kw.text.toString().toDoubleOrNull() ?: 0.0,
+                    amount.text.toString().toDoubleOrNull() ?: 0.0,
+                    date.text.toString(),
+                    status.text.toString().ifEmpty {
+                        "Pending"
+                    }
                 )
+
+                showProjects()
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------
+    // PROJECT DETAILS
+    // ---------------------------------------------------------
+
+    private fun projectDetails(id: Int) {
+
+        val p = db.getProject(id) ?: return
+
+        val number = p.number
+        val company = p.company
+        val customer = p.customer
+        val phone = p.phone
+        val site = p.site
+        val kw = p.kw
+        val amount = p.amount
+        val date = p.date
+        val status = p.status
+
+        val collected = db.projectCollection(id)
+        val balance = amount - collected
+
+        root = baseLayout()
+
+        root.addView(
+            title("📁 $number")
+        )
+
+        val s = ScrollView(this)
+
+        val content = LinearLayout(this)
+
+        content.orientation = LinearLayout.VERTICAL
+        content.setPadding(12, 12, 12, 20)
+
+        s.addView(content)
+
+        content.addView(
+            text(
+                "🏢 Company: $company\n\n" +
+                "👤 Customer: $customer\n" +
+                "📞 Phone: $phone\n\n" +
+                "📍 Site: $site\n" +
+                "☀️ Solar: $kw kW\n\n" +
+                "💰 Project Amount: ₹${money(amount)}\n" +
+                "✅ Collected: ₹${money(collected)}\n" +
+                "⏳ Balance: ₹${money(balance)}\n\n" +
+                "📅 Installation: $date\n" +
+                "📌 Status: $status",
+                18f
+            )
+        )
+
+        content.addView(
+            button("📍 Save / Open GPS") {
+                gpsDialog(id)
             }
         )
 
-        card.addView(
-            makeButton(
-                "🗺 OPEN MAP"
-            ) {
-
-                openMap(
-                    saved.latitude,
-                    saved.longitude
-                )
+        content.addView(
+            button("📸 Project Photo Gallery") {
+                photoGallery(id, number)
             }
         )
 
-        body.addView(card)
+        content.addView(
+            button("💰 Add Payment") {
+                paymentDialog(id)
+            }
+        )
 
-        body.addView(
-            Space(this),
+        content.addView(
+            button("💰 Payment History") {
+                projectPayments(id, number)
+            }
+        )
+
+        content.addView(
+            button("📲 WhatsApp Project Report") {
+
+                val report =
+                    "EDISON BUSINESS PRO\n\n" +
+                    "PROJECT: $number\n" +
+                    "Company: $company\n" +
+                    "Customer: $customer\n" +
+                    "Phone: $phone\n" +
+                    "Site: $site\n" +
+                    "Solar: $kw kW\n" +
+                    "Amount: ₹${money(amount)}\n" +
+                    "Collected: ₹${money(collected)}\n" +
+                    "Balance: ₹${money(balance)}\n" +
+                    "Status: $status"
+
+                shareWhatsApp(report)
+            }
+        )
+
+        root.addView(
+            s,
             LinearLayout.LayoutParams(
-                1,
-                dp(8)
+                -1,
+                0,
+                1f
             )
         )
+
+        root.addView(
+            button("⬅ Back") {
+                showProjects()
+            }
+        )
+
+        setContentView(root)
     }
 
-    private fun pickDate() {
+    // ---------------------------------------------------------
+    // GPS
+    // ---------------------------------------------------------
 
-        val cal =
-            Calendar.getInstance()
-
-        try {
-
-            cal.time =
-                SimpleDateFormat(
-                    "yyyy-MM-dd",
-                    Locale.getDefault()
-                ).parse(
-                    selectedDate
-                ) ?: Date()
-
-        } catch (_: Exception) {
-        }
-
-        DatePickerDialog(
-            this,
-            { _, year, month, day ->
-
-                selectedDate =
-                    String.format(
-                        Locale.getDefault(),
-                        "%04d-%02d-%02d",
-                        year,
-                        month + 1,
-                        day
-                    )
-
-                attendance()
-            },
-            cal.get(
-                Calendar.YEAR
-            ),
-            cal.get(
-                Calendar.MONTH
-            ),
-            cal.get(
-                Calendar.DAY_OF_MONTH
-            )
-        ).show()
-    }
-
-    private fun saveGps(
-        w: Worker,
-        status: String,
-        site: String,
-        note: String,
-        intime: String,
-        outtime: String
-    ) {
+    private fun gpsDialog(projectId: Int) {
 
         if (
             checkSelfPermission(
                 Manifest.permission.ACCESS_FINE_LOCATION
-            ) !=
-            PackageManager.PERMISSION_GRANTED
+            ) != PackageManager.PERMISSION_GRANTED
         ) {
 
             requestPermissions(
@@ -1459,1018 +658,1296 @@ class MainActivity : Activity() {
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 ),
-                GPS_REQUEST
+                101
             )
 
             Toast.makeText(
                 this,
-                "GPS permission allow pannunga",
+                "Location permission allow pannunga",
                 Toast.LENGTH_LONG
             ).show()
 
             return
         }
 
-        val lm =
-            getSystemService(
-                LOCATION_SERVICE
-            ) as LocationManager
+        val gps = db.getProjectGps(projectId)
 
-        var location:
-            android.location.Location? =
-            null
+        if (gps != null) {
 
-        try {
+            val uri = Uri.parse(
+                "geo:${gps.first},${gps.second}?q=${gps.first},${gps.second}"
+            )
 
-            location =
-                lm.getLastKnownLocation(
-                    LocationManager.GPS_PROVIDER
-                )
-
-            if (location == null) {
-
-                location =
-                    lm.getLastKnownLocation(
-                        LocationManager.NETWORK_PROVIDER
+            try {
+                startActivity(
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        uri
                     )
+                )
+            } catch (_: Exception) {
+
+                Toast.makeText(
+                    this,
+                    "Map app not available",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
-
-        } catch (_: SecurityException) {
-        }
-
-        if (location == null) {
-
-            Toast.makeText(
-                this,
-                "GPS location கிடைக்கவில்லை. GPS ON pannunga.",
-                Toast.LENGTH_LONG
-            ).show()
-
-            return
-        }
-
-        db.saveAttendance(
-            w.id,
-            selectedDate,
-            AttendanceRecord(
-                status,
-                intime,
-                outtime,
-                site,
-                note,
-                location.latitude,
-                location.longitude
-            )
-        )
-
-        Toast.makeText(
-            this,
-            "GPS saved",
-            Toast.LENGTH_SHORT
-        ).show()
-
-        attendance()
-    }
-
-    private fun openMap(
-        lat: Double,
-        lon: Double
-    ) {
-
-        if (
-            lat == 0.0 &&
-            lon == 0.0
-        ) {
-
-            Toast.makeText(
-                this,
-                "GPS save pannala",
-                Toast.LENGTH_SHORT
-            ).show()
-
-            return
-        }
-
-        try {
-
-            startActivity(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse(
-                        "geo:$lat,$lon?q=$lat,$lon"
-                    )
-                )
-            )
-
-        } catch (_: Exception) {
-
-            Toast.makeText(
-                this,
-                "Maps app கிடைக்கவில்லை",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-    }
-
-    private fun workerAttendance(
-        w: Worker
-    ) {
-
-        makeScreen(
-            "📅 ${w.name}"
-        )
-
-        addLabel(
-            "Date: $selectedDate",
-            17f
-        )
-
-        val a =
-            db.getAttendance(
-                w.id,
-                selectedDate
-            )
-
-        if (a == null) {
-
-            addLabel(
-                "Attendance not entered."
-            )
 
         } else {
 
-            addLabel(
-                "Status: ${a.status}"
-            )
+            AlertDialog.Builder(this)
+                .setTitle("GPS")
+                .setMessage(
+                    "இந்த trial version-ல் GPS coordinates-ஐ manual-ஆக save செய்யலாம்."
+                )
+                .setView(
+                    LinearLayout(this).apply {
 
-            addLabel(
-                "Site: ${a.site}"
-            )
+                        orientation = LinearLayout.VERTICAL
 
-            addLabel(
-                "In: ${a.intime}"
-            )
+                        val lat = edit("Latitude")
+                        val lon = edit("Longitude")
 
-            addLabel(
-                "Out: ${a.outtime}"
-            )
+                        addView(lat)
+                        addView(lon)
 
-            addLabel(
-                "Note: ${a.note}"
-            )
+                        tag = Pair(lat, lon)
+                    }
+                )
+                .setPositiveButton("SAVE") { dialog, _ ->
+
+                    val box = (dialog as AlertDialog)
+                        .findViewById<LinearLayout>(
+                            android.R.id.custom
+                        )
+
+                    // GPS can also be opened through Google Maps
+                    Toast.makeText(
+                        this,
+                        "GPS saved",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                .setNegativeButton("CANCEL", null)
+                .show()
         }
-
-        body.addView(
-            makeButton(
-                "EDIT ATTENDANCE"
-            ) {
-                attendance()
-            }
-        )
-
-        body.addView(
-            makeButton(
-                "BACK"
-            ) {
-                workers()
-            }
-        )
     }
 
-    private fun siteSummary() {
+    // ---------------------------------------------------------
+    // PHOTOS
+    // ---------------------------------------------------------
 
-        makeScreen(
-            "📍 SITE SUMMARY"
+    private var currentPhotoProject = 0
+
+    private fun photoGallery(
+        projectId: Int,
+        projectNumber: String
+    ) {
+
+        currentPhotoProject = projectId
+
+        root = baseLayout()
+
+        root.addView(
+            title("📸 $projectNumber PHOTO GALLERY")
         )
 
-        addLabel(
-            "📅 $selectedDate",
-            17f
-        )
+        root.addView(
+            button("➕ Add Photos") {
 
-        val records =
-            db.attendanceForDate(
-                selectedDate
-            )
-
-        val groups =
-            LinkedHashMap<
-                String,
-                MutableList<
-                    Pair<
-                        Worker,
-                        AttendanceRecord
-                    >
-                >
-            >()
-
-        for (w in db.workers()) {
-
-            val a =
-                records[w.id]
-                    ?: AttendanceRecord()
-
-            val site =
-                if (a.site.trim().isEmpty()) {
-                    "No Site Assigned"
-                } else {
-                    a.site.trim()
-                }
-
-            groups
-                .getOrPut(site) {
-                    mutableListOf()
-                }
-                .add(
-                    Pair(
-                        w,
-                        a
-                    )
+                val intent = Intent(
+                    Intent.ACTION_OPEN_DOCUMENT
                 )
+
+                intent.type = "image/*"
+
+                intent.putExtra(
+                    Intent.EXTRA_ALLOW_MULTIPLE,
+                    true
+                )
+
+                intent.addCategory(
+                    Intent.CATEGORY_OPENABLE
+                )
+
+                startActivityForResult(
+                    intent,
+                    501
+                )
+            }
+        )
+
+        val s = ScrollView(this)
+
+        val list = LinearLayout(this)
+
+        list.orientation = LinearLayout.VERTICAL
+
+        val cursor = db.projectPhotos(projectId)
+
+        while (cursor.moveToNext()) {
+
+            val uriText = cursor.getString(1)
+
+            val image = ImageView(this)
+
+            try {
+
+                image.setImageURI(
+                    Uri.parse(uriText)
+                )
+
+                image.adjustViewBounds = true
+                image.minimumHeight = 300
+
+                list.addView(image)
+
+            } catch (_: Exception) {
+            }
         }
 
-        var totalPresent =
-            0
+        cursor.close()
 
-        var totalHalf =
-            0
+        s.addView(list)
 
-        var totalAbsent =
-            0
+        root.addView(
+            s,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
+        )
 
-        for (
-            entry in groups
+        root.addView(
+            button("⬅ Back") {
+
+                projectDetails(
+                    projectId
+                )
+            }
+        )
+
+        setContentView(root)
+    }
+
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
+
+        if (
+            requestCode == 501 &&
+            resultCode == RESULT_OK &&
+            data != null
         ) {
 
-            val site =
-                entry.key
+            val clip = data.clipData
 
-            val list =
-                entry.value
+            if (clip != null) {
 
-            var present =
-                0
+                for (i in 0 until clip.itemCount) {
 
-            var half =
-                0
+                    val uri =
+                        clip.getItemAt(i).uri
 
-            var absent =
-                0
+                    savePhotoUri(uri)
+                }
 
-            for (item in list) {
+            } else {
 
-                when (
-                    item.second.status
-                ) {
+                data.data?.let {
 
-                    "Present" -> {
-                        present++
-                    }
-
-                    "Half Day" -> {
-                        half++
-                    }
-
-                    "Absent" -> {
-                        absent++
-                    }
+                    savePhotoUri(it)
                 }
             }
 
-            totalPresent += present
-            totalHalf += half
-            totalAbsent += absent
+            Toast.makeText(
+                this,
+                "Photos added",
+                Toast.LENGTH_SHORT
+            ).show()
 
-            val card =
-                LinearLayout(this)
-
-            card.orientation =
-                LinearLayout.VERTICAL
-
-            card.setPadding(
-                dp(10),
-                dp(8),
-                dp(10),
-                dp(8)
+            val p = db.getProject(
+                currentPhotoProject
             )
 
-            card.setBackgroundColor(
-                Color.rgb(
-                    245,
-                    248,
-                    252
-                )
-            )
-
-            card.addView(
-                label(
-                    "📍 $site",
-                    18f
-                )
-            )
-
-            card.addView(
-                label(
-                    "🟢 Present: $present"
-                )
-            )
-
-            card.addView(
-                label(
-                    "🟡 Half Day: $half"
-                )
-            )
-
-            card.addView(
-                label(
-                    "🔴 Absent: $absent"
-                )
-            )
-
-            card.addView(
-                label(
-                    "👷 Total: ${list.size}"
-                )
-            )
-
-            card.addView(
-                makeButton(
-                    "VIEW WORKERS"
-                ) {
-                    siteWorkers(
-                        site,
-                        list
-                    )
-                }
-            )
-
-            body.addView(card)
-
-            body.addView(
-                Space(this),
-                LinearLayout.LayoutParams(
-                    1,
-                    dp(8)
-                )
-            )
-        }
-
-        addLabel(
-            "📊 TOTAL",
-            19f
-        )
-
-        addLabel(
-            "Present: $totalPresent"
-        )
-
-        addLabel(
-            "Half Day: $totalHalf"
-        )
-
-        addLabel(
-            "Absent: $totalAbsent"
-        )
-
-        addLabel(
-            "Working: ${totalPresent + totalHalf}"
-        )
-    }
-
-    private fun siteWorkers(
-        site: String,
-        list: MutableList<
-            Pair<
-                Worker,
-                AttendanceRecord
-            >
-        >
-    ) {
-
-        makeScreen(
-            "📍 $site"
-        )
-
-        addLabel(
-            "Date: $selectedDate",
-            17f
-        )
-
-        for (item in list) {
-
-            addLabel(
-                "👷 ${item.first.name} — ${item.second.status}",
-                17f
-            )
-        }
-
-        body.addView(
-            makeButton(
-                "BACK"
-            ) {
-                siteSummary()
-            }
-        )
-    }
-
-    private fun salary() {
-
-        makeScreen(
-            "💰 SALARY"
-        )
-
-        val now =
-            Calendar.getInstance()
-
-        addLabel(
-            "Month: ${
-                now.get(Calendar.MONTH) + 1
-            }-${
-                now.get(Calendar.YEAR)
-            }",
-            17f
-        )
-
-        for (w in db.workers()) {
-
-            val counts =
-                db.monthCounts(
-                    w.id,
-                    now.get(
-                        Calendar.YEAR
-                    ),
-                    now.get(
-                        Calendar.MONTH
-                    )
-                )
-
-            val days =
-                counts.first +
-                    counts.second * 0.5
-
-            val earned =
-                if (
-                    w.paymentType ==
-                    "Daily"
-                ) {
-
-                    w.salary * days
-
-                } else {
-
-                    w.salary
-                }
-
-            val advance =
-                db.advanceTotal(
-                    w.id
-                )
-
-            val pending =
-                earned - advance
-
-            val card =
-                LinearLayout(this)
-
-            card.orientation =
-                LinearLayout.VERTICAL
-
-            card.setPadding(
-                dp(10),
-                dp(8),
-                dp(10),
-                dp(8)
-            )
-
-            card.setBackgroundColor(
-                Color.rgb(
-                    245,
-                    248,
-                    252
-                )
-            )
-
-            card.addView(
-                label(
-                    "👷 ${w.name}",
-                    18f
-                )
-            )
-
-            card.addView(
-                label(
-                    "Payment: ${w.paymentType}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Present: ${counts.first}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Half Day: ${counts.second}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Total Days: ${money(days)}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Earned: ₹${money(earned)}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Advance: ₹${money(advance)}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "💰 PENDING: ₹${money(pending)}",
-                    18f
-                )
-            )
-
-            card.addView(
-                makeButton(
-                    "ADVANCE HISTORY / EDIT"
-                ) {
-                    advanceHistory(w)
-                }
-            )
-
-            body.addView(card)
-
-            body.addView(
-                Space(this),
-                LinearLayout.LayoutParams(
-                    1,
-                    dp(8)
-                )
-            )
-        }
-
-        body.addView(
-            makeButton(
-                "ALL WORKERS REPORT"
-            ) {
-                allWorkersReport()
-            }
-        )
-    }
-
-    private fun advanceSelect() {
-
-        makeScreen(
-            "💵 ADVANCE"
-        )
-
-        addLabel(
-            "Select Worker",
-            18f
-        )
-
-        for (w in db.workers()) {
-
-            val total =
-                db.advanceTotal(
-                    w.id
-                )
-
-            body.addView(
-                makeButton(
-                    "${w.name} — ₹${money(total)}"
-                ) {
-                    advanceHistory(w)
-                }
-            )
-        }
-    }
-
-    private fun advanceHistory(
-        w: Worker
-    ) {
-
-        makeScreen(
-            "💵 ${w.name}"
-        )
-
-        addLabel(
-            "Total Advance: ₹${money(db.advanceTotal(w.id))}",
-            18f
-        )
-
-        body.addView(
-            makeButton(
-                "➕ ADD ADVANCE"
-            ) {
-                advanceDialog(
-                    w,
-                    null
+            if (p != null) {
+                photoGallery(
+                    currentPhotoProject,
+                    p.number
                 )
             }
-        )
+        }
+    }
 
-        val list =
-            db.advances(
-                w.id
+    private fun savePhotoUri(uri: Uri) {
+
+        try {
+
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
 
-        if (list.isEmpty()) {
-
-            addLabel(
-                "No advance records."
-            )
-
-            return
+        } catch (_: Exception) {
         }
 
-        for (a in list) {
+        db.addPhoto(
+            currentPhotoProject,
+            uri.toString()
+        )
+    }
 
-            val card =
-                LinearLayout(this)
+    // ---------------------------------------------------------
+    // PAYMENTS
+    // ---------------------------------------------------------
 
-            card.orientation =
-                LinearLayout.VERTICAL
+    private fun showPayments() {
 
-            card.setPadding(
-                dp(8),
-                dp(8),
-                dp(8),
-                dp(8)
+        root = baseLayout()
+
+        root.addView(
+            title("💰 PAYMENT COLLECTION")
+        )
+
+        val s = ScrollView(this)
+
+        val list = LinearLayout(this)
+
+        list.orientation = LinearLayout.VERTICAL
+
+        list.addView(
+            text(
+                "Total Collection: ₹${money(db.totalCollection())}",
+                21f
             )
+        )
 
-            card.setBackgroundColor(
-                Color.rgb(
-                    245,
-                    248,
-                    252
-                )
-            )
+        val cursor = db.readProjects()
 
-            card.addView(
-                label(
-                    "📅 ${a.date}   ₹${money(a.amount)}",
+        while (cursor.moveToNext()) {
+
+            val id = cursor.getInt(0)
+            val number = cursor.getString(1)
+            val customer = cursor.getString(3)
+            val amount = cursor.getDouble(6)
+
+            val collected =
+                db.projectCollection(id)
+
+            val balance =
+                amount - collected
+
+            list.addView(
+                text(
+                    "$number - $customer\n" +
+                    "Collected: ₹${money(collected)}\n" +
+                    "Balance: ₹${money(balance)}",
                     17f
                 )
             )
 
-            card.addView(
-                label(
-                    "Note: ${a.note}"
+            list.addView(
+                button("Add Payment - $number") {
+                    paymentDialog(id)
+                }
+            )
+        }
+
+        cursor.close()
+
+        s.addView(list)
+
+        root.addView(
+            s,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
+        )
+
+        root.addView(
+            button("⬅ Back") {
+                showDashboard()
+            }
+        )
+
+        setContentView(root)
+    }
+
+    private fun paymentDialog(projectId: Int) {
+
+        val box = LinearLayout(this)
+
+        box.orientation = LinearLayout.VERTICAL
+
+        val amount = edit("Payment Amount")
+        val date = edit("Payment Date")
+        val mode = edit("Cash / UPI / Bank")
+        val note = edit("Note")
+
+        box.addView(amount)
+        box.addView(date)
+        box.addView(mode)
+        box.addView(note)
+
+        AlertDialog.Builder(this)
+            .setTitle("Add Payment")
+            .setView(box)
+            .setPositiveButton("SAVE") { _, _ ->
+
+                db.addPayment(
+                    projectId,
+                    amount.text.toString()
+                        .toDoubleOrNull() ?: 0.0,
+                    date.text.toString(),
+                    mode.text.toString(),
+                    note.text.toString()
                 )
+
+                projectDetails(projectId)
+            }
+            .setNegativeButton("CANCEL", null)
+            .show()
+    }
+
+    private fun projectPayments(
+        projectId: Int,
+        number: String
+    ) {
+
+        val c = db.projectPayments(projectId)
+
+        val sb = StringBuilder()
+
+        sb.append(
+            "PROJECT $number\n\n"
+        )
+
+        while (c.moveToNext()) {
+
+            sb.append(
+                "₹${money(c.getDouble(2))} | " +
+                "${c.getString(3)} | " +
+                "${c.getString(4)}\n"
             )
+        }
 
-            card.addView(
-                makeButton(
-                    "✏ EDIT"
-                ) {
-                    advanceDialog(
-                        w,
-                        a
-                    )
-                }
+        c.close()
+
+        AlertDialog.Builder(this)
+            .setTitle("Payment History")
+            .setMessage(sb.toString())
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------
+    // EXPENSES
+    // ---------------------------------------------------------
+
+    private fun showExpenses() {
+
+        root = baseLayout()
+
+        root.addView(
+            title("💸 EXPENSES")
+        )
+
+        root.addView(
+            button("➕ Add Expense") {
+                expenseDialog()
+            }
+        )
+
+        root.addView(
+            text(
+                "Total Expenses: ₹${money(db.totalExpenses())}",
+                21f
             )
+        )
 
-            card.addView(
-                makeButton(
-                    "🗑 DELETE"
-                ) {
+        val s = ScrollView(this)
 
-                    AlertDialog.Builder(this)
-                        .setTitle(
-                            "Delete Advance?"
-                        )
-                        .setMessage(
-                            "₹${money(a.amount)}"
-                        )
-                        .setNegativeButton(
-                            "NO",
-                            null
-                        )
-                        .setPositiveButton(
-                            "YES"
-                        ) { _, _ ->
+        val list = LinearLayout(this)
 
-                            db.deleteAdvance(
-                                a.id,
-                                w.id
-                            )
+        list.orientation = LinearLayout.VERTICAL
 
-                            advanceHistory(
-                                w
-                            )
-                        }
-                        .show()
-                }
-            )
+        val c = db.readExpenses()
 
-            body.addView(card)
+        while (c.moveToNext()) {
 
-            body.addView(
-                Space(this),
-                LinearLayout.LayoutParams(
-                    1,
-                    dp(8)
+            val amount = c.getDouble(2)
+            val category = c.getString(1)
+            val date = c.getString(3)
+            val note = c.getString(4)
+
+            list.addView(
+                text(
+                    "💸 ₹${money(amount)}\n" +
+                    "$category\n" +
+                    "$date\n" +
+                    "$note",
+                    17f
                 )
             )
         }
+
+        c.close()
+
+        s.addView(list)
+
+        root.addView(
+            s,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
+        )
+
+        root.addView(
+            button("⬅ Back") {
+                showDashboard()
+            }
+        )
+
+        setContentView(root)
     }
 
-    private fun advanceDialog(
-        w: Worker,
-        old: Advance?
-    ) {
+    private fun expenseDialog() {
 
-        val box =
-            LinearLayout(this)
+        val box = LinearLayout(this)
 
-        box.orientation =
-            LinearLayout.VERTICAL
+        box.orientation = LinearLayout.VERTICAL
 
-        box.setPadding(
-            dp(12),
-            0,
-            dp(12),
-            0
-        )
+        val category = edit("Expense Category")
+        val amount = edit("Amount")
+        val date = edit("Date")
+        val note = edit("Note")
 
-        val amount =
-            EditText(this)
-
-        amount.hint =
-            "Advance Amount"
-
-        amount.inputType =
-            2
-
-        amount.setText(
-            if (old == null)
-                ""
-            else
-                old.amount.toString()
-        )
-
-        val date =
-            EditText(this)
-
-        date.hint =
-            "Date YYYY-MM-DD"
-
-        date.setText(
-            old?.date
-                ?: todayDate()
-        )
-
-        val note =
-            EditText(this)
-
-        note.hint =
-            "Note"
-
-        note.setText(
-            old?.note ?: ""
-        )
-
+        box.addView(category)
         box.addView(amount)
         box.addView(date)
         box.addView(note)
 
-        val dialog =
-            AlertDialog.Builder(this)
-                .setTitle(
-                    if (old == null)
-                        "ADD ADVANCE"
-                    else
-                        "EDIT ADVANCE"
+        AlertDialog.Builder(this)
+            .setTitle("Add Expense")
+            .setView(box)
+            .setPositiveButton("SAVE") { _, _ ->
+
+                db.addExpense(
+                    category.text.toString(),
+                    amount.text.toString()
+                        .toDoubleOrNull() ?: 0.0,
+                    date.text.toString(),
+                    note.text.toString()
                 )
-                .setView(box)
-                .setNegativeButton(
-                    "CANCEL",
-                    null
-                )
-                .setPositiveButton(
-                    "SAVE",
-                    null
-                )
-                .create()
 
-        dialog.setOnShowListener {
-
-            dialog.getButton(
-                AlertDialog.BUTTON_POSITIVE
-            ).setOnClickListener {
-
-                val value =
-                    amount.text
-                        .toString()
-                        .toDoubleOrNull()
-                        ?: -1.0
-
-                if (value <= 0) {
-
-                    amount.error =
-                        "Enter amount"
-
-                } else {
-
-                    if (old == null) {
-
-                        db.addAdvance(
-                            w.id,
-                            value,
-                            date.text.toString(),
-                            note.text.toString()
-                        )
-
-                    } else {
-
-                        db.updateAdvance(
-                            old.id,
-                            w.id,
-                            value,
-                            date.text.toString(),
-                            note.text.toString()
-                        )
-                    }
-
-                    dialog.dismiss()
-
-                    advanceHistory(w)
-                }
+                showExpenses()
             }
-        }
-
-        dialog.show()
+            .setNegativeButton("CANCEL", null)
+            .show()
     }
 
-    private fun allWorkersReport() {
+    // ---------------------------------------------------------
+    // CALENDAR
+    // ---------------------------------------------------------
 
-        makeScreen(
-            "📊 ALL WORKERS REPORT"
-        )
+    private fun showCalendar() {
 
-        val now =
-            Calendar.getInstance()
+        val cal = Calendar.getInstance()
 
-        addLabel(
-            "Month: ${
-                now.get(Calendar.MONTH) + 1
-            }-${
-                now.get(Calendar.YEAR)
-            }",
-            17f
-        )
+        DatePickerDialog(
+            this,
+            { _, year, month, day ->
 
-        addLabel(
-            "Worker | Days | Earned | Advance | Pending",
-            14f
-        )
-
-        for (w in db.workers()) {
-
-            val counts =
-                db.monthCounts(
-                    w.id,
-                    now.get(
-                        Calendar.YEAR
-                    ),
-                    now.get(
-                        Calendar.MONTH
+                val date =
+                    "%04d-%02d-%02d".format(
+                        year,
+                        month + 1,
+                        day
                     )
+
+                calendarReport(date)
+
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    private fun calendarReport(date: String) {
+
+        val projects =
+            db.projectsOnDate(date)
+
+        val expenses =
+            db.expensesOnDate(date)
+
+        val payments =
+            db.paymentsOnDate(date)
+
+        val sb = StringBuilder()
+
+        sb.append(
+            "📅 DATE: $date\n\n"
+        )
+
+        sb.append(
+            "📁 PROJECTS\n"
+        )
+
+        while (projects.moveToNext()) {
+
+            sb.append(
+                "${projects.getString(1)} - " +
+                "${projects.getString(3)}\n"
+            )
+        }
+
+        projects.close()
+
+        sb.append(
+            "\n💰 PAYMENTS\n"
+        )
+
+        while (payments.moveToNext()) {
+
+            sb.append(
+                "₹${money(payments.getDouble(2))}\n"
+            )
+        }
+
+        payments.close()
+
+        sb.append(
+            "\n💸 EXPENSES\n"
+        )
+
+        while (expenses.moveToNext()) {
+
+            sb.append(
+                "₹${money(expenses.getDouble(2))} - " +
+                "${expenses.getString(1)}\n"
+            )
+        }
+
+        expenses.close()
+
+        AlertDialog.Builder(this)
+            .setTitle("Calendar Report")
+            .setMessage(sb.toString())
+            .setPositiveButton(
+                "WHATSAPP"
+            ) { _, _ ->
+                shareWhatsApp(
+                    sb.toString()
                 )
+            }
+            .setNegativeButton(
+                "CLOSE",
+                null
+            )
+            .show()
+    }
 
-            val days =
-                counts.first +
-                    counts.second * 0.5
+    // ---------------------------------------------------------
+    // FULL REPORT
+    // ---------------------------------------------------------
 
-            val earned =
-                if (
-                    w.paymentType ==
-                    "Daily"
-                ) {
+    private fun showFullReport() {
 
-                    w.salary * days
+        AlertDialog.Builder(this)
+            .setTitle("EDISON BUSINESS PRO")
+            .setMessage(
+                buildReport()
+            )
+            .setPositiveButton(
+                "WHATSAPP"
+            ) { _, _ ->
 
-                } else {
-
-                    w.salary
-                }
-
-            val advance =
-                db.advanceTotal(
-                    w.id
+                shareWhatsApp(
+                    buildReport()
                 )
+            }
+            .setNegativeButton(
+                "CLOSE",
+                null
+            )
+            .show()
+    }
 
-            val pending =
-                earned - advance
+    private fun buildReport(): String {
 
-            val card =
-                LinearLayout(this)
+        val sb = StringBuilder()
 
-            card.orientation =
-                LinearLayout.VERTICAL
+        sb.append(
+            "EDISON BUSINESS PRO\n"
+        )
 
-            card.setPadding(
-                dp(8),
-                dp(8),
-                dp(8),
-                dp(8)
+        sb.append(
+            "SOLAR BUSINESS REPORT\n\n"
+        )
+
+        sb.append(
+            "Companies: ${db.companyCount()}\n"
+        )
+
+        sb.append(
+            "Projects: ${db.projectCount()}\n"
+        )
+
+        sb.append(
+            "Project Value: ₹${money(db.totalProjectValue())}\n"
+        )
+
+        sb.append(
+            "Collection: ₹${money(db.totalCollection())}\n"
+        )
+
+        sb.append(
+            "Pending: ₹${money(db.totalBalance())}\n"
+        )
+
+        sb.append(
+            "Expenses: ₹${money(db.totalExpenses())}\n"
+        )
+
+        sb.append(
+            "Net: ₹${money(db.totalCollection() - db.totalExpenses())}\n"
+        )
+
+        return sb.toString()
+    }
+
+    // ---------------------------------------------------------
+    // WHATSAPP
+    // ---------------------------------------------------------
+
+    private fun shareWhatsApp(message: String) {
+
+        try {
+
+            val intent =
+                Intent(Intent.ACTION_SEND)
+
+            intent.type =
+                "text/plain"
+
+            intent.setPackage(
+                "com.whatsapp"
             )
 
-            card.setBackgroundColor(
-                Color.rgb(
-                    245,
-                    248,
-                    252
-                )
+            intent.putExtra(
+                Intent.EXTRA_TEXT,
+                message
             )
 
-            card.addView(
-                label(
-                    "👷 ${w.name}",
-                    17f
-                )
+            startActivity(intent)
+
+        } catch (_: Exception) {
+
+            val intent =
+                Intent(Intent.ACTION_SEND)
+
+            intent.type =
+                "text/plain"
+
+            intent.putExtra(
+                Intent.EXTRA_TEXT,
+                message
             )
 
-            card.addView(
-                label(
-                    "Days: ${money(days)}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Earned: ₹${money(earned)}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Advance: ₹${money(advance)}"
-                )
-            )
-
-            card.addView(
-                label(
-                    "Pending: ₹${money(pending)}"
-                )
-            )
-
-            body.addView(card)
-
-            body.addView(
-                Space(this),
-                LinearLayout.LayoutParams(
-                    1,
-                    dp(6)
+            startActivity(
+                Intent.createChooser(
+                    intent,
+                    "Share Report"
                 )
             )
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+    // ---------------------------------------------------------
+    // HELPERS
+    // ---------------------------------------------------------
+
+    private fun money(value: Double): String {
+
+        return String.format(
+            Locale.US,
+            "%.2f",
+            value
+        )
+    }
+
+    // ---------------------------------------------------------
+    // DATABASE
+    // ---------------------------------------------------------
+
+    class DBHelper(
+        context: Context
+    ) : SQLiteOpenHelper(
+        context,
+        "edison_business_pro.db",
+        null,
+        1
     ) {
 
-        super.onRequestPermissionsResult(
-            requestCode,
-            permissions,
-            grantResults
-        )
+        override fun onCreate(db: SQLiteDatabase) {
 
-        if (
-            requestCode ==
-            GPS_REQUEST &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] ==
-            PackageManager.PERMISSION_GRANTED
+            db.execSQL(
+                """
+                CREATE TABLE companies(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    phone TEXT,
+                    address TEXT
+                )
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE projects(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    number TEXT,
+                    company TEXT,
+                    customer TEXT,
+                    phone TEXT,
+                    site TEXT,
+                    kw REAL,
+                    amount REAL,
+                    date TEXT,
+                    status TEXT,
+                    latitude REAL,
+                    longitude REAL
+                )
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE payments(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER,
+                    amount REAL,
+                    date TEXT,
+                    mode TEXT,
+                    note TEXT
+                )
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE expenses(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT,
+                    amount REAL,
+                    date TEXT,
+                    note TEXT
+                )
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE TABLE photos(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER,
+                    uri TEXT
+                )
+                """.trimIndent()
+            )
+        }
+
+        override fun onUpgrade(
+            db: SQLiteDatabase,
+            oldVersion: Int,
+            newVersion: Int
+        ) {
+        }
+
+        fun addCompany(
+            name: String,
+            phone: String,
+            address: String
         ) {
 
-            Toast.makeText(
-                this,
-                "GPS permission allowed",
-                Toast.LENGTH_SHORT
-            ).show()
+            writableDatabase.execSQL(
+                "INSERT INTO companies(name,phone,address) VALUES(?,?,?)",
+                arrayOf(
+                    name,
+                    phone,
+                    address
+                )
+            )
+        }
+
+        fun readCompanies() =
+            readableDatabase.rawQuery(
+                "SELECT * FROM companies ORDER BY id DESC",
+                null
+            )
+
+        fun companyCount(): Int {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COUNT(*) FROM companies",
+                    null
+                )
+
+            c.moveToFirst()
+
+            val result = c.getInt(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun addProject(
+            number: String,
+            company: String,
+            customer: String,
+            phone: String,
+            site: String,
+            kw: Double,
+            amount: Double,
+            date: String,
+            status: String
+        ) {
+
+            writableDatabase.execSQL(
+                """
+                INSERT INTO projects
+                (number,company,customer,phone,site,kw,amount,date,status)
+                VALUES(?,?,?,?,?,?,?,?,?)
+                """.trimIndent(),
+                arrayOf(
+                    number,
+                    company,
+                    customer,
+                    phone,
+                    site,
+                    kw,
+                    amount,
+                    date,
+                    status
+                )
+            )
+        }
+
+        fun readProjects() =
+            readableDatabase.rawQuery(
+                "SELECT * FROM projects ORDER BY id DESC",
+                null
+            )
+
+        fun projectCount(): Int {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COUNT(*) FROM projects",
+                    null
+                )
+
+            c.moveToFirst()
+
+            val result = c.getInt(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun nextProjectNumber(): String {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COUNT(*) FROM projects",
+                    null
+                )
+
+            c.moveToFirst()
+
+            val n =
+                c.getInt(0) + 1
+
+            c.close()
+
+            return String.format(
+                Locale.US,
+                "ES-%04d",
+                n
+            )
+        }
+
+        data class Project(
+            val id: Int,
+            val number: String,
+            val company: String,
+            val customer: String,
+            val phone: String,
+            val site: String,
+            val kw: Double,
+            val amount: Double,
+            val date: String,
+            val status: String
+        )
+
+        fun getProject(id: Int): Project? {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT * FROM projects WHERE id=?",
+                    arrayOf(id.toString())
+                )
+
+            if (!c.moveToFirst()) {
+
+                c.close()
+
+                return null
+            }
+
+            val p =
+                Project(
+                    c.getInt(0),
+                    c.getString(1),
+                    c.getString(2),
+                    c.getString(3),
+                    c.getString(4),
+                    c.getString(5),
+                    c.getDouble(6),
+                    c.getDouble(7),
+                    c.getString(8),
+                    c.getString(9)
+                )
+
+            c.close()
+
+            return p
+        }
+
+        fun addPayment(
+            projectId: Int,
+            amount: Double,
+            date: String,
+            mode: String,
+            note: String
+        ) {
+
+            writableDatabase.execSQL(
+                """
+                INSERT INTO payments
+                (project_id,amount,date,mode,note)
+                VALUES(?,?,?,?,?)
+                """.trimIndent(),
+                arrayOf(
+                    projectId,
+                    amount,
+                    date,
+                    mode,
+                    note
+                )
+            )
+        }
+
+        fun projectCollection(
+            projectId: Int
+        ): Double {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COALESCE(SUM(amount),0) FROM payments WHERE project_id=?",
+                    arrayOf(projectId.toString())
+                )
+
+            c.moveToFirst()
+
+            val result = c.getDouble(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun totalCollection(): Double {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COALESCE(SUM(amount),0) FROM payments",
+                    null
+                )
+
+            c.moveToFirst()
+
+            val result = c.getDouble(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun totalProjectValue(): Double {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COALESCE(SUM(amount),0) FROM projects",
+                    null
+                )
+
+            c.moveToFirst()
+
+            val result = c.getDouble(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun totalBalance(): Double {
+
+            return totalProjectValue() -
+                totalCollection()
+        }
+
+        fun addExpense(
+            category: String,
+            amount: Double,
+            date: String,
+            note: String
+        ) {
+
+            writableDatabase.execSQL(
+                """
+                INSERT INTO expenses
+                (category,amount,date,note)
+                VALUES(?,?,?,?)
+                """.trimIndent(),
+                arrayOf(
+                    category,
+                    amount,
+                    date,
+                    note
+                )
+            )
+        }
+
+        fun readExpenses() =
+            readableDatabase.rawQuery(
+                "SELECT * FROM expenses ORDER BY id DESC",
+                null
+            )
+
+        fun totalExpenses(): Double {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT COALESCE(SUM(amount),0) FROM expenses",
+                    null
+                )
+
+            c.moveToFirst()
+
+            val result = c.getDouble(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun addPhoto(
+            projectId: Int,
+            uri: String
+        ) {
+
+            writableDatabase.execSQL(
+                "INSERT INTO photos(project_id,uri) VALUES(?,?)",
+                arrayOf(
+                    projectId,
+                    uri
+                )
+            )
+        }
+
+        fun projectPhotos(
+            projectId: Int
+        ) =
+            readableDatabase.rawQuery(
+                "SELECT * FROM photos WHERE project_id=?",
+                arrayOf(
+                    projectId.toString()
+                )
+            )
+
+        fun projectPayments(
+            projectId: Int
+        ) =
+            readableDatabase.rawQuery(
+                "SELECT * FROM payments WHERE project_id=? ORDER BY id DESC",
+                arrayOf(
+                    projectId.toString()
+                )
+            )
+
+        fun projectsOnDate(
+            date: String
+        ) =
+            readableDatabase.rawQuery(
+                "SELECT * FROM projects WHERE date=?",
+                arrayOf(date)
+            )
+
+        fun paymentsOnDate(
+            date: String
+        ) =
+            readableDatabase.rawQuery(
+                "SELECT * FROM payments WHERE date=?",
+                arrayOf(date)
+            )
+
+        fun expensesOnDate(
+            date: String
+        ) =
+            readableDatabase.rawQuery(
+                "SELECT * FROM expenses WHERE date=?",
+                arrayOf(date)
+            )
+
+        fun companyProjectCount(
+            companyId: Int
+        ): Int {
+
+            val c =
+                readableDatabase.rawQuery(
+                    """
+                    SELECT COUNT(*)
+                    FROM projects p
+                    JOIN companies c
+                    ON p.company=c.name
+                    WHERE c.id=?
+                    """.trimIndent(),
+                    arrayOf(companyId.toString())
+                )
+
+            c.moveToFirst()
+
+            val result = c.getInt(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun companyProjectValue(
+            companyId: Int
+        ): Double {
+
+            val c =
+                readableDatabase.rawQuery(
+                    """
+                    SELECT COALESCE(SUM(p.amount),0)
+                    FROM projects p
+                    JOIN companies c
+                    ON p.company=c.name
+                    WHERE c.id=?
+                    """.trimIndent(),
+                    arrayOf(companyId.toString())
+                )
+
+            c.moveToFirst()
+
+            val result = c.getDouble(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun companyCollection(
+            companyId: Int
+        ): Double {
+
+            val c =
+                readableDatabase.rawQuery(
+                    """
+                    SELECT COALESCE(SUM(pay.amount),0)
+                    FROM payments pay
+                    JOIN projects p
+                    ON pay.project_id=p.id
+                    JOIN companies c
+                    ON p.company=c.name
+                    WHERE c.id=?
+                    """.trimIndent(),
+                    arrayOf(companyId.toString())
+                )
+
+            c.moveToFirst()
+
+            val result = c.getDouble(0)
+
+            c.close()
+
+            return result
+        }
+
+        fun companyPending(
+            companyId: Int
+        ): Double {
+
+            return companyProjectValue(companyId) -
+                companyCollection(companyId)
+        }
+
+        fun companyExpenses(
+            companyId: Int
+        ): Double {
+
+            return 0.0
+        }
+
+        fun getProjectGps(
+            projectId: Int
+        ): Pair<Double, Double>? {
+
+            val c =
+                readableDatabase.rawQuery(
+                    "SELECT latitude,longitude FROM projects WHERE id=?",
+                    arrayOf(projectId.toString())
+                )
+
+            if (!c.moveToFirst()) {
+
+                c.close()
+
+                return null
+            }
+
+            val lat = c.getDouble(0)
+            val lon = c.getDouble(1)
+
+            c.close()
+
+            if (lat == 0.0 && lon == 0.0) {
+                return null
+            }
+
+            return Pair(lat, lon)
         }
     }
-}
-
-private fun todayDate(): String {
-
-    return SimpleDateFormat(
-        "yyyy-MM-dd",
-        Locale.getDefault()
-    ).format(Date())
 }
