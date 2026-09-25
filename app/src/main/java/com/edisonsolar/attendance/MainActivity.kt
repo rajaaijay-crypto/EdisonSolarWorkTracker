@@ -8,9 +8,20 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.widget.*
+import android.view.View
+import android.view.WindowInsets
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.DatePicker
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -89,33 +100,33 @@ class DBHelper(context: Context) :
         oldVersion: Int,
         newVersion: Int
     ) {
-        // No database structure change required
+        // Existing database is preserved.
     }
 
-    fun workers(): List<Worker> {
+    fun getWorkers(): List<Worker> {
 
-        val result = mutableListOf<Worker>()
+        val list = mutableListOf<Worker>()
 
         readableDatabase.rawQuery(
             "SELECT id,name,phone,salary,type FROM workers ORDER BY name",
             null
-        ).use { c ->
+        ).use { cursor ->
 
-            while (c.moveToNext()) {
+            while (cursor.moveToNext()) {
 
-                result.add(
+                list.add(
                     Worker(
-                        id = c.getLong(0),
-                        name = c.getString(1) ?: "",
-                        phone = c.getString(2) ?: "",
-                        salary = c.getDouble(3),
-                        type = c.getString(4) ?: "Monthly"
+                        id = cursor.getLong(0),
+                        name = cursor.getString(1) ?: "",
+                        phone = cursor.getString(2) ?: "",
+                        salary = cursor.getDouble(3),
+                        type = cursor.getString(4) ?: "Monthly"
                     )
                 )
             }
         }
 
-        return result
+        return list
     }
 
     fun addWorker(
@@ -125,17 +136,17 @@ class DBHelper(context: Context) :
         type: String
     ) {
 
-        val v = ContentValues()
+        val values = ContentValues()
 
-        v.put("name", name)
-        v.put("phone", phone)
-        v.put("salary", salary)
-        v.put("type", type)
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("type", type)
 
         writableDatabase.insert(
             "workers",
             null,
-            v
+            values
         )
     }
 
@@ -147,16 +158,16 @@ class DBHelper(context: Context) :
         type: String
     ) {
 
-        val v = ContentValues()
+        val values = ContentValues()
 
-        v.put("name", name)
-        v.put("phone", phone)
-        v.put("salary", salary)
-        v.put("type", type)
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("type", type)
 
         writableDatabase.update(
             "workers",
-            v,
+            values,
             "id=?",
             arrayOf(id.toString())
         )
@@ -184,8 +195,9 @@ class DBHelper(context: Context) :
     }
 
     /*
-     * IMPORTANT:
-     * One worker + one date = one attendance record.
+     * IMPORTANT ATTENDANCE SAVE
+     *
+     * One worker + one date = one record.
      */
     fun saveAttendance(
         workerId: Long,
@@ -197,15 +209,14 @@ class DBHelper(context: Context) :
         note: String
     ) {
 
-        val cleanStatus =
-            when (status.trim()) {
-                "Present" -> "Present"
-                "Absent" -> "Absent"
-                "Half Day" -> "Half Day"
-                else -> "Absent"
-            }
+        val finalStatus = when (status.trim()) {
+            "Present" -> "Present"
+            "Absent" -> "Absent"
+            "Half Day" -> "Half Day"
+            else -> "Absent"
+        }
 
-        // Remove old record ONLY for this worker and this date.
+        // Delete only this worker's record for this exact date.
         writableDatabase.delete(
             "attendance",
             "worker_id=? AND date=?",
@@ -217,15 +228,42 @@ class DBHelper(context: Context) :
 
         val values = ContentValues()
 
-        values.put("worker_id", workerId)
-        values.put("date", date)
-        values.put("status", cleanStatus)
-        values.put("intime", intime.trim())
-        values.put("outtime", outtime.trim())
-        values.put("site", site.trim())
-        values.put("note", note.trim())
+        values.put(
+            "worker_id",
+            workerId
+        )
 
-        writableDatabase.insertOrThrow(
+        values.put(
+            "date",
+            date
+        )
+
+        values.put(
+            "status",
+            finalStatus
+        )
+
+        values.put(
+            "intime",
+            intime.trim()
+        )
+
+        values.put(
+            "outtime",
+            outtime.trim()
+        )
+
+        values.put(
+            "site",
+            site.trim()
+        )
+
+        values.put(
+            "note",
+            note.trim()
+        )
+
+        writableDatabase.insert(
             "attendance",
             null,
             values
@@ -233,7 +271,7 @@ class DBHelper(context: Context) :
     }
 
     /*
-     * Get attendance ONLY for this worker and this exact date.
+     * Read attendance for EXACT worker + EXACT date.
      */
     fun getAttendance(
         workerId: Long,
@@ -252,16 +290,25 @@ class DBHelper(context: Context) :
                 workerId.toString(),
                 date
             )
-        ).use { c ->
+        ).use { cursor ->
 
-            if (c.moveToFirst()) {
+            if (cursor.moveToFirst()) {
 
                 return AttendanceRecord(
-                    status = c.getString(0) ?: "Absent",
-                    intime = c.getString(1) ?: "",
-                    outtime = c.getString(2) ?: "",
-                    site = c.getString(3) ?: "",
-                    note = c.getString(4) ?: ""
+                    status =
+                        cursor.getString(0) ?: "Absent",
+
+                    intime =
+                        cursor.getString(1) ?: "",
+
+                    outtime =
+                        cursor.getString(2) ?: "",
+
+                    site =
+                        cursor.getString(3) ?: "",
+
+                    note =
+                        cursor.getString(4) ?: ""
                 )
             }
         }
@@ -284,10 +331,10 @@ class DBHelper(context: Context) :
                 date,
                 status
             )
-        ).use { c ->
+        ).use { cursor ->
 
-            if (c.moveToFirst()) {
-                return c.getInt(0)
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0)
             }
         }
 
@@ -305,11 +352,13 @@ class DBHelper(context: Context) :
             WHERE date LIKE ?
             AND status IN ('Present','Half Day')
             """.trimIndent(),
-            arrayOf("$month%")
-        ).use { c ->
+            arrayOf(
+                "$month%"
+            )
+        ).use { cursor ->
 
-            if (c.moveToFirst()) {
-                return c.getInt(0)
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0)
             }
         }
 
@@ -322,26 +371,36 @@ class DBHelper(context: Context) :
         note: String
     ) {
 
-        val v = ContentValues()
+        val values = ContentValues()
 
-        v.put("worker_id", workerId)
-
-        v.put(
-            "date",
-            today()
+        values.put(
+            "worker_id",
+            workerId
         )
 
-        v.put("amount", amount)
-        v.put("note", note)
+        values.put(
+            "date",
+            currentDate()
+        )
+
+        values.put(
+            "amount",
+            amount
+        )
+
+        values.put(
+            "note",
+            note
+        )
 
         writableDatabase.insert(
             "advances",
             null,
-            v
+            values
         )
     }
 
-    fun advance(
+    fun getAdvance(
         workerId: Long
     ): Double {
 
@@ -354,17 +413,17 @@ class DBHelper(context: Context) :
             arrayOf(
                 workerId.toString()
             )
-        ).use { c ->
+        ).use { cursor ->
 
-            if (c.moveToFirst()) {
-                return c.getDouble(0)
+            if (cursor.moveToFirst()) {
+                return cursor.getDouble(0)
             }
         }
 
         return 0.0
     }
 
-    private fun today(): String {
+    private fun currentDate(): String {
 
         return SimpleDateFormat(
             "yyyy-MM-dd",
@@ -398,7 +457,32 @@ class MainActivity : Activity() {
         home()
     }
 
-    private fun layout(
+    private fun applySystemBarFix(
+        root: View
+    ) {
+
+        if (Build.VERSION.SDK_INT >= 30) {
+
+            root.setOnApplyWindowInsetsListener { view, insets ->
+
+                val bars =
+                    insets.getInsets(
+                        WindowInsets.Type.systemBars()
+                    )
+
+                view.setPadding(
+                    0,
+                    bars.top,
+                    0,
+                    bars.bottom
+                )
+
+                insets
+            }
+        }
+    }
+
+    private fun createLayout(
         title: String
     ): LinearLayout {
 
@@ -408,22 +492,7 @@ class MainActivity : Activity() {
         root.orientation =
             LinearLayout.VERTICAL
 
-        root.setOnApplyWindowInsetsListener { view, insets ->
-
-            val bars =
-                insets.getInsets(
-                    android.view.WindowInsets.Type.systemBars()
-                )
-
-            view.setPadding(
-                0,
-                bars.top,
-                0,
-                bars.bottom
-            )
-
-            insets
-        }
+        applySystemBarFix(root)
 
         val header =
             TextView(this)
@@ -431,7 +500,8 @@ class MainActivity : Activity() {
         header.text =
             "⚡ EDISON\n$title"
 
-        header.textSize = 21f
+        header.textSize =
+            21f
 
         header.setTextColor(
             Color.WHITE
@@ -448,7 +518,13 @@ class MainActivity : Activity() {
             blue
         )
 
-        root.addView(header)
+        root.addView(
+            header,
+            LinearLayout.LayoutParams(
+                -1,
+                -2
+            )
+        )
 
         val scroll =
             ScrollView(this)
@@ -466,7 +542,9 @@ class MainActivity : Activity() {
             12
         )
 
-        scroll.addView(content)
+        scroll.addView(
+            content
+        )
 
         root.addView(
             scroll,
@@ -477,48 +555,49 @@ class MainActivity : Activity() {
             )
         )
 
-        val nav =
+        val navigation =
             LinearLayout(this)
 
-        nav.orientation =
+        navigation.orientation =
             LinearLayout.HORIZONTAL
 
-        nav.setBackgroundColor(
+        navigation.setBackgroundColor(
             lightBlue
         )
 
-        listOf(
-            "HOME",
-            "WORKERS",
-            "ATTENDANCE",
-            "SALARY"
-        ).forEach { name ->
+        val names =
+            listOf(
+                "HOME",
+                "WORKERS",
+                "ATTENDANCE",
+                "SALARY"
+            )
 
-            val b =
+        names.forEach { name ->
+
+            val button =
                 Button(this)
 
-            b.text =
+            button.text =
                 name
 
-            b.textSize =
+            button.textSize =
                 12f
 
-            b.setPadding(
+            button.setPadding(
                 1,
                 1,
                 1,
                 1
             )
 
-            b.setOnClickListener {
+            button.setOnClickListener {
 
-                when (b.text.toString()) {
+                when (name) {
 
-                    "HOME" ->
-                        home()
+                    "HOME" -> home()
 
-                    "WORKERS" ->
-                        workers()
+                    "WORKERS" -> workers()
 
                     "ATTENDANCE" ->
                         attendance()
@@ -528,8 +607,8 @@ class MainActivity : Activity() {
                 }
             }
 
-            nav.addView(
-                b,
+            navigation.addView(
+                button,
                 LinearLayout.LayoutParams(
                     0,
                     -2,
@@ -538,36 +617,46 @@ class MainActivity : Activity() {
             )
         }
 
-        root.addView(nav)
+        root.addView(
+            navigation
+        )
 
         return root
     }
 
-    private fun button(
+    private fun makeButton(
         text: String,
         action: () -> Unit
     ): Button {
 
-        return Button(this).apply {
+        val button =
+            Button(this)
 
-            this.text = text
+        button.text =
+            text
 
-            setOnClickListener {
-                action()
-            }
+        button.setOnClickListener {
+            action()
         }
+
+        return button
     }
 
     private fun home() {
 
         val root =
-            layout("Dashboard")
+            createLayout(
+                "Dashboard"
+            )
 
         val date =
             today()
 
+        val workers =
+            db.getWorkers()
+
         val total =
-            db.workers().size
+            workers.size
 
         val present =
             db.countStatusForDate(
@@ -582,8 +671,8 @@ class MainActivity : Activity() {
             )
 
         /*
-         * Workers who are not Present or Half Day
-         * are treated as Absent for today's dashboard.
+         * Anyone not marked Present/Half Day
+         * is counted as Absent.
          */
         val absent =
             (total - present - halfDay)
@@ -613,51 +702,59 @@ class MainActivity : Activity() {
             }
         )
 
-        addCard(
+        addDashboardCard(
             "👷 TOTAL WORKERS",
             total.toString()
         )
 
-        addCard(
+        addDashboardCard(
             "🟢 PRESENT",
             present.toString()
         )
 
-        addCard(
+        addDashboardCard(
             "🔴 ABSENT",
             absent.toString()
         )
 
-        addCard(
+        addDashboardCard(
             "🟡 HALF DAY",
             halfDay.toString()
         )
 
-        addCard(
+        addDashboardCard(
             "📅 WORKING DAYS",
             workingDays.toString()
         )
 
         content.addView(
-            button("📅 OPEN ATTENDANCE") {
+            makeButton(
+                "📅 OPEN ATTENDANCE"
+            ) {
                 attendance()
             }
         )
 
         content.addView(
-            button("＋ ADD WORKER") {
+            makeButton(
+                "＋ ADD WORKER"
+            ) {
                 addWorker()
             }
         )
 
         content.addView(
-            button("👷 VIEW WORKERS") {
+            makeButton(
+                "👷 VIEW WORKERS"
+            ) {
                 workers()
             }
         )
 
         content.addView(
-            button("💰 SALARY & ADVANCE") {
+            makeButton(
+                "💰 SALARY & ADVANCE"
+            ) {
                 salary()
             }
         )
@@ -665,7 +762,7 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun addCard(
+    private fun addDashboardCard(
         title: String,
         value: String
     ) {
@@ -687,33 +784,33 @@ class MainActivity : Activity() {
             lightBlue
         )
 
-        val left =
+        val titleView =
             TextView(this)
 
-        left.text =
+        titleView.text =
             title
 
-        left.textSize =
+        titleView.textSize =
             16f
 
-        val right =
+        val valueView =
             TextView(this)
 
-        right.text =
+        valueView.text =
             value
 
-        right.textSize =
+        valueView.textSize =
             23f
 
-        right.setTextColor(
+        valueView.setTextColor(
             blue
         )
 
-        right.gravity =
+        valueView.gravity =
             Gravity.END
 
         box.addView(
-            left,
+            titleView,
             LinearLayout.LayoutParams(
                 0,
                 -2,
@@ -722,14 +819,16 @@ class MainActivity : Activity() {
         )
 
         box.addView(
-            right,
+            valueView,
             LinearLayout.LayoutParams(
                 70,
                 -2
             )
         )
 
-        content.addView(box)
+        content.addView(
+            box
+        )
 
         content.addView(
             TextView(this),
@@ -743,86 +842,108 @@ class MainActivity : Activity() {
     private fun attendance() {
 
         val root =
-            layout("Attendance Calendar")
+            createLayout(
+                "Attendance Calendar"
+            )
 
-        val selected =
+        val selectedDate =
             Calendar.getInstance()
 
-        val dateText =
+        val dateTitle =
             TextView(this)
 
-        dateText.textSize =
+        dateTitle.textSize =
             21f
 
-        dateText.setTextColor(
+        dateTitle.setTextColor(
             blue
         )
 
         content.addView(
-            dateText
+            dateTitle
         )
 
-        fun refreshTitle() {
-
-            dateText.text =
-                "📅 " +
-                        SimpleDateFormat(
-                            "dd MMMM yyyy",
-                            Locale.getDefault()
-                        ).format(
-                            selected.time
-                        )
-        }
-
-        refreshTitle()
-
         content.addView(
-            button("📆 SELECT DATE") {
+            makeButton(
+                "📆 SELECT DATE"
+            ) {
 
                 DatePickerDialog(
                     this,
-                    { _, year, month, day ->
+                    object :
+                        DatePickerDialog.OnDateSetListener {
 
-                        selected.set(
-                            year,
-                            month,
-                            day
-                        )
+                        override fun onDateSet(
+                            view: DatePicker?,
+                            year: Int,
+                            month: Int,
+                            dayOfMonth: Int
+                        ) {
 
-                        refreshTitle()
+                            selectedDate.set(
+                                year,
+                                month,
+                                dayOfMonth
+                            )
 
-                        refreshAttendanceList(
-                            selected
-                        )
+                            updateDateTitle(
+                                dateTitle,
+                                selectedDate
+                            )
+
+                            refreshAttendance(
+                                selectedDate
+                            )
+                        }
                     },
-                    selected.get(
+                    selectedDate.get(
                         Calendar.YEAR
                     ),
-                    selected.get(
+                    selectedDate.get(
                         Calendar.MONTH
                     ),
-                    selected.get(
+                    selectedDate.get(
                         Calendar.DAY_OF_MONTH
                     )
                 ).show()
             }
         )
 
-        refreshAttendanceList(
-            selected
+        updateDateTitle(
+            dateTitle,
+            selectedDate
+        )
+
+        refreshAttendance(
+            selectedDate
         )
 
         setContentView(root)
     }
 
-    private fun refreshAttendanceList(
-        selected: Calendar
+    private fun updateDateTitle(
+        title: TextView,
+        calendar: Calendar
+    ) {
+
+        title.text =
+            "📅 " +
+                    SimpleDateFormat(
+                        "dd MMMM yyyy",
+                        Locale.getDefault()
+                    ).format(
+                        calendar.time
+                    )
+    }
+
+    private fun refreshAttendance(
+        calendar: Calendar
     ) {
 
         /*
-         * Keep first 2 views:
-         * 0 = date
-         * 1 = select button
+         * Keep:
+         * child 0 = date title
+         * child 1 = date button
          */
         while (content.childCount > 2) {
 
@@ -836,11 +957,11 @@ class MainActivity : Activity() {
                 "yyyy-MM-dd",
                 Locale.getDefault()
             ).format(
-                selected.time
+                calendar.time
             )
 
         val workers =
-            db.workers()
+            db.getWorkers()
 
         val present =
             db.countStatusForDate(
@@ -860,170 +981,53 @@ class MainActivity : Activity() {
                     halfDay)
                 .coerceAtLeast(0)
 
+        val summary =
+            TextView(this)
+
+        summary.text =
+            """
+            🟢 Present: $present
+            🟡 Half Day: $halfDay
+            🔴 Absent: $absent
+            """.trimIndent()
+
+        summary.textSize =
+            17f
+
         content.addView(
-            TextView(this).apply {
-
-                text =
-                    """
-                    🟢 Present: $present
-                    🟡 Half Day: $halfDay
-                    🔴 Absent: $absent
-                    """.trimIndent()
-
-                textSize =
-                    17f
-            }
+            summary
         )
 
         workers.forEach { worker ->
 
-            val record =
-                db.getAttendance(
-                    worker.id,
-                    date
-                )
-
-            /*
-             * IMPORTANT:
-             * No record = Absent.
-             * Existing record uses its actual status.
-             */
-            val status =
-                record?.status ?: "Absent"
-
-            val statusIcon =
-                when (status) {
-
-                    "Present" -> "🟢"
-
-                    "Half Day" -> "🟡"
-
-                    "Absent" -> "🔴"
-
-                    else -> "⚪"
-                }
-
-            val box =
-                LinearLayout(this)
-
-            box.orientation =
-                LinearLayout.VERTICAL
-
-            box.setPadding(
-                10,
-                10,
-                10,
-                10
-            )
-
-            box.setBackgroundColor(
-                lightBlue
-            )
-
-            val info =
-                TextView(this)
-
-            info.text =
-                """
-                👷 ${worker.name}
-
-                $statusIcon Status: $status
-
-                📍 ${record?.site?.ifBlank {
-                    "No site entered"
-                } ?: "No attendance record"}
-                """.trimIndent()
-
-            info.textSize =
-                16f
-
-            box.addView(info)
-
-            box.addView(
-                button("👁️ VIEW WORK") {
-
-                    viewWork(
-                        worker,
-                        date
-                    )
-                }
-            )
-
-            box.addView(
-                button("✏️ EDIT ATTENDANCE") {
-
-                    attendanceFor(
-                        worker,
-                        date
-                    )
-                }
-            )
-
-            content.addView(box)
-
-            content.addView(
-                TextView(this),
-                LinearLayout.LayoutParams(
-                    -1,
-                    8
-                )
+            addWorkerAttendanceCard(
+                worker,
+                date
             )
         }
     }
 
-    private fun attendanceFor(
+    private fun addWorkerAttendanceCard(
         worker: Worker,
         date: String
     ) {
 
-        /*
-         * Read the EXACT worker + EXACT date record.
-         */
-        val old =
+        val record =
             db.getAttendance(
                 worker.id,
                 date
             )
 
-        val box =
-            LinearLayout(this)
-
-        box.orientation =
-            LinearLayout.VERTICAL
-
-        val status =
-            Spinner(this)
-
-        val statusList =
-            arrayOf(
-                "Present",
-                "Absent",
-                "Half Day"
-            )
-
-        status.adapter =
-            ArrayAdapter(
-                this,
-                android.R.layout.simple_spinner_item,
-                statusList
-            ).apply {
-
-                setDropDownViewResource(
-                    android.R.layout.simple_spinner_dropdown_item
-                )
-            }
-
         /*
-         * Very important:
-         * Existing status is selected correctly.
-         * New/no record defaults to Absent.
+         * No record = Absent.
+         * Existing record = exact saved status.
          */
-        val selectedStatus =
-            old?.status ?: "Absent"
+        val status =
+            record?.status ?: "Absent"
 
-        val selectedPosition =
-            statusList.indexOf(
-                selectedStatus
-            ).let {
+        val icon =
+            when (status) {
 
-               
+                "Present" -> "🟢"
+
+                "Half Day" -> "
