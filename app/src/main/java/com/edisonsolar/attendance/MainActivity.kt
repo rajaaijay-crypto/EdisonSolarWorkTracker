@@ -1,46 +1,61 @@
 package com.edisonsolar.attendance
 
 import android.Manifest
-import android.app.*
-import android.content.*
+import android.app.Activity
+import android.app.AlertDialog
+import android.app.DatePickerDialog
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
 import android.graphics.Color
-import android.location.Location
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
-import android.view.Gravity
 import android.view.View
 import android.widget.*
 import java.text.SimpleDateFormat
-import java.util.*
-import kotlin.math.roundToInt
+import java.util.Calendar
+import java.util.Locale
 
 data class Worker(
-    val id: Int,
-    var name: String,
-    var phone: String,
-    var salary: Double,
-    var paymentType: String,
-    var role: String
+    val id: Long,
+    val name: String,
+    val phone: String,
+    val salary: Double,
+    val paymentType: String,
+    val role: String
 )
 
 data class AttendanceRecord(
-    var status: String = "Present",
-    var intime: String = "",
-    var outtime: String = "",
-    var site: String = "",
-    var note: String = "",
-    var latitude: Double? = null,
-    var longitude: Double? = null
+    val status: String,
+    val intime: String,
+    val outtime: String,
+    val site: String,
+    val note: String,
+    val latitude: Double,
+    val longitude: Double
+)
+
+data class Advance(
+    val id: Long,
+    val workerId: Long,
+    val amount: Double,
+    val date: String,
+    val note: String
 )
 
 class DBHelper(context: Context) :
-    SQLiteOpenHelper(context, "edison.db", null, 6) {
+    android.database.sqlite.SQLiteOpenHelper(
+        context,
+        "edison.db",
+        null,
+        6
+    ) {
 
-    override fun onCreate(db: SQLiteDatabase) {
-
+    override fun onCreate(
+        db: android.database.sqlite.SQLiteDatabase
+    ) {
         db.execSQL(
             """
             CREATE TABLE workers(
@@ -60,13 +75,13 @@ class DBHelper(context: Context) :
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 worker_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
-                status TEXT DEFAULT 'Present',
-                intime TEXT,
-                outtime TEXT,
-                site TEXT,
-                note TEXT,
-                latitude REAL,
-                longitude REAL,
+                status TEXT DEFAULT 'Absent',
+                intime TEXT DEFAULT '',
+                outtime TEXT DEFAULT '',
+                site TEXT DEFAULT '',
+                note TEXT DEFAULT '',
+                latitude REAL DEFAULT 0,
+                longitude REAL DEFAULT 0,
                 UNIQUE(worker_id,date)
             )
             """.trimIndent()
@@ -79,18 +94,17 @@ class DBHelper(context: Context) :
                 worker_id INTEGER NOT NULL,
                 amount REAL DEFAULT 0,
                 date TEXT,
-                note TEXT
+                note TEXT DEFAULT ''
             )
             """.trimIndent()
         )
     }
 
     override fun onUpgrade(
-        db: SQLiteDatabase,
+        db: android.database.sqlite.SQLiteDatabase,
         oldVersion: Int,
         newVersion: Int
     ) {
-
         if (oldVersion < 5) {
             try {
                 db.execSQL(
@@ -110,18 +124,49 @@ class DBHelper(context: Context) :
         if (oldVersion < 6) {
             try {
                 db.execSQL(
-                    "ALTER TABLE attendance ADD COLUMN latitude REAL"
+                    "ALTER TABLE attendance ADD COLUMN latitude REAL DEFAULT 0"
                 )
             } catch (_: Exception) {
             }
 
             try {
                 db.execSQL(
-                    "ALTER TABLE attendance ADD COLUMN longitude REAL"
+                    "ALTER TABLE attendance ADD COLUMN longitude REAL DEFAULT 0"
                 )
             } catch (_: Exception) {
             }
         }
+    }
+
+    fun getWorkers(): MutableList<Worker> {
+        val result = mutableListOf<Worker>()
+
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT id,name,phone,salary,
+                   COALESCE(payment_type,'Daily'),
+                   COALESCE(role,'')
+            FROM workers
+            ORDER BY name
+            """.trimIndent(),
+            null
+        )
+
+        while (cursor.moveToNext()) {
+            result.add(
+                Worker(
+                    cursor.getLong(0),
+                    cursor.getString(1) ?: "",
+                    cursor.getString(2) ?: "",
+                    cursor.getDouble(3),
+                    cursor.getString(4) ?: "Daily",
+                    cursor.getString(5) ?: ""
+                )
+            )
+        }
+
+        cursor.close()
+        return result
     }
 
     fun addWorker(
@@ -131,52 +176,46 @@ class DBHelper(context: Context) :
         paymentType: String,
         role: String
     ) {
-        writableDatabase.execSQL(
-            """
-            INSERT INTO workers
-            (name,phone,salary,payment_type,role)
-            VALUES(?,?,?,?,?)
-            """.trimIndent(),
-            arrayOf(name, phone, salary, paymentType, role)
+        val values = ContentValues()
+
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("payment_type", paymentType)
+        values.put("role", role)
+
+        writableDatabase.insert(
+            "workers",
+            null,
+            values
         )
     }
 
     fun updateWorker(
-        id: Int,
+        id: Long,
         name: String,
         phone: String,
         salary: Double,
         paymentType: String,
         role: String
     ) {
-        writableDatabase.execSQL(
-            """
-            UPDATE workers SET
-            name=?,
-            phone=?,
-            salary=?,
-            payment_type=?,
-            role=?
-            WHERE id=?
-            """.trimIndent(),
-            arrayOf(
-                name,
-                phone,
-                salary,
-                paymentType,
-                role,
-                id
-            )
-        )
-    }
+        val values = ContentValues()
 
-    fun deleteWorker(id: Int) {
-        writableDatabase.delete(
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("payment_type", paymentType)
+        values.put("role", role)
+
+        writableDatabase.update(
             "workers",
+            values,
             "id=?",
             arrayOf(id.toString())
         )
+    }
 
+    fun deleteWorker(id: Long) {
         writableDatabase.delete(
             "attendance",
             "worker_id=?",
@@ -188,85 +227,23 @@ class DBHelper(context: Context) :
             "worker_id=?",
             arrayOf(id.toString())
         )
-    }
 
-    fun getWorkers(): MutableList<Worker> {
-
-        val list = mutableListOf<Worker>()
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT id,name,phone,salary,
-                   COALESCE(payment_type,'Daily'),
-                   COALESCE(role,'')
-            FROM workers
-            ORDER BY name
-            """.trimIndent(),
-            null
-        )
-
-        while (c.moveToNext()) {
-
-            list.add(
-                Worker(
-                    c.getInt(0),
-                    c.getString(1) ?: "",
-                    c.getString(2) ?: "",
-                    c.getDouble(3),
-                    c.getString(4) ?: "Daily",
-                    c.getString(5) ?: ""
-                )
-            )
-        }
-
-        c.close()
-
-        return list
-    }
-
-    fun saveAttendance(
-        workerId: Int,
-        date: String,
-        record: AttendanceRecord
-    ) {
-
-        writableDatabase.execSQL(
-            """
-            INSERT INTO attendance
-            (worker_id,date,status,intime,outtime,site,note,latitude,longitude)
-            VALUES(?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(worker_id,date)
-            DO UPDATE SET
-            status=excluded.status,
-            intime=excluded.intime,
-            outtime=excluded.outtime,
-            site=excluded.site,
-            note=excluded.note,
-            latitude=excluded.latitude,
-            longitude=excluded.longitude
-            """.trimIndent(),
-            arrayOf(
-                workerId,
-                date,
-                record.status,
-                record.intime,
-                record.outtime,
-                record.site,
-                record.note,
-                record.latitude,
-                record.longitude
-            )
+        writableDatabase.delete(
+            "workers",
+            "id=?",
+            arrayOf(id.toString())
         )
     }
 
     fun getAttendance(
-        workerId: Int,
+        workerId: Long,
         date: String
     ): AttendanceRecord? {
 
-        val c = readableDatabase.rawQuery(
+        val cursor = readableDatabase.rawQuery(
             """
-            SELECT status,intime,outtime,site,note,latitude,longitude
+            SELECT status,intime,outtime,site,note,
+                   latitude,longitude
             FROM attendance
             WHERE worker_id=? AND date=?
             LIMIT 1
@@ -277,35 +254,33 @@ class DBHelper(context: Context) :
             )
         )
 
-        if (!c.moveToFirst()) {
-            c.close()
+        if (!cursor.moveToFirst()) {
+            cursor.close()
             return null
         }
 
-        val record = AttendanceRecord(
-            status = c.getString(0) ?: "Present",
-            intime = c.getString(1) ?: "",
-            outtime = c.getString(2) ?: "",
-            site = c.getString(3) ?: "",
-            note = c.getString(4) ?: "",
-            latitude =
-                if (c.isNull(5)) null else c.getDouble(5),
-            longitude =
-                if (c.isNull(6)) null else c.getDouble(6)
+        val result = AttendanceRecord(
+            cursor.getString(0) ?: "Absent",
+            cursor.getString(1) ?: "",
+            cursor.getString(2) ?: "",
+            cursor.getString(3) ?: "",
+            cursor.getString(4) ?: "",
+            cursor.getDouble(5),
+            cursor.getDouble(6)
         )
 
-        c.close()
-
-        return record
+        cursor.close()
+        return result
     }
 
     fun getAttendanceForDate(
         date: String
-    ): HashMap<Int, AttendanceRecord> {
+    ): HashMap<Long, AttendanceRecord> {
 
-        val map = HashMap<Int, AttendanceRecord>()
+        val result =
+            HashMap<Long, AttendanceRecord>()
 
-        val c = readableDatabase.rawQuery(
+        val cursor = readableDatabase.rawQuery(
             """
             SELECT worker_id,status,intime,outtime,
                    site,note,latitude,longitude
@@ -315,29 +290,145 @@ class DBHelper(context: Context) :
             arrayOf(date)
         )
 
-        while (c.moveToNext()) {
+        while (cursor.moveToNext()) {
 
-            map[c.getInt(0)] = AttendanceRecord(
-                status = c.getString(1) ?: "Present",
-                intime = c.getString(2) ?: "",
-                outtime = c.getString(3) ?: "",
-                site = c.getString(4) ?: "",
-                note = c.getString(5) ?: "",
-                latitude =
-                    if (c.isNull(6)) null else c.getDouble(6),
-                longitude =
-                    if (c.isNull(7)) null else c.getDouble(7)
+            result[cursor.getLong(0)] =
+                AttendanceRecord(
+                    cursor.getString(1) ?: "Absent",
+                    cursor.getString(2) ?: "",
+                    cursor.getString(3) ?: "",
+                    cursor.getString(4) ?: "",
+                    cursor.getString(5) ?: "",
+                    cursor.getDouble(6),
+                    cursor.getDouble(7)
+                )
+        }
+
+        cursor.close()
+        return result
+    }
+
+    fun saveAttendance(
+        workerId: Long,
+        date: String,
+        record: AttendanceRecord
+    ) {
+        val values = ContentValues()
+
+        values.put("worker_id", workerId)
+        values.put("date", date)
+        values.put("status", record.status)
+        values.put("intime", record.intime)
+        values.put("outtime", record.outtime)
+        values.put("site", record.site)
+        values.put("note", record.note)
+        values.put("latitude", record.latitude)
+        values.put("longitude", record.longitude)
+
+        writableDatabase.insertWithOnConflict(
+            "attendance",
+            null,
+            values,
+            android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE
+        )
+    }
+
+    fun getAdvances(
+        workerId: Long
+    ): MutableList<Advance> {
+
+        val result =
+            mutableListOf<Advance>()
+
+        val cursor = readableDatabase.rawQuery(
+            """
+            SELECT id,worker_id,amount,date,note
+            FROM advances
+            WHERE worker_id=?
+            ORDER BY date DESC,id DESC
+            """.trimIndent(),
+            arrayOf(workerId.toString())
+        )
+
+        while (cursor.moveToNext()) {
+            result.add(
+                Advance(
+                    cursor.getLong(0),
+                    cursor.getLong(1),
+                    cursor.getDouble(2),
+                    cursor.getString(3) ?: "",
+                    cursor.getString(4) ?: ""
+                )
             )
         }
 
-        c.close()
-
-        return map
+        cursor.close()
+        return result
     }
 
-    fun getAdvanceTotal(workerId: Int): Double {
+    fun addAdvance(
+        workerId: Long,
+        amount: Double,
+        date: String,
+        note: String
+    ) {
+        val values = ContentValues()
 
-        val c = readableDatabase.rawQuery(
+        values.put("worker_id", workerId)
+        values.put("amount", amount)
+        values.put("date", date)
+        values.put("note", note)
+
+        writableDatabase.insert(
+            "advances",
+            null,
+            values
+        )
+    }
+
+    fun updateAdvance(
+        id: Long,
+        workerId: Long,
+        amount: Double,
+        date: String,
+        note: String
+    ) {
+        val values = ContentValues()
+
+        values.put("amount", amount)
+        values.put("date", date)
+        values.put("note", note)
+
+        writableDatabase.update(
+            "advances",
+            values,
+            "id=? AND worker_id=?",
+            arrayOf(
+                id.toString(),
+                workerId.toString()
+            )
+        )
+    }
+
+    fun deleteAdvance(
+        id: Long,
+        workerId: Long
+    ) {
+        writableDatabase.delete(
+            "advances",
+            "id=? AND worker_id=?",
+            arrayOf(
+                id.toString(),
+                workerId.toString()
+            )
+        )
+    }
+
+    fun getAdvanceTotal(
+        workerId: Long
+    ): Double {
+
+        val cursor = readableDatabase.rawQuery(
             """
             SELECT COALESCE(SUM(amount),0)
             FROM advances
@@ -346,111 +437,33 @@ class DBHelper(context: Context) :
             arrayOf(workerId.toString())
         )
 
-        val value =
-            if (c.moveToFirst()) c.getDouble(0)
-            else 0.0
+        var total = 0.0
 
-        c.close()
-
-        return value
-    }
-
-    fun addAdvance(
-        workerId: Int,
-        amount: Double,
-        date: String,
-        note: String
-    ) {
-
-        writableDatabase.execSQL(
-            """
-            INSERT INTO advances
-            (worker_id,amount,date,note)
-            VALUES(?,?,?,?)
-            """.trimIndent(),
-            arrayOf(
-                workerId,
-                amount,
-                date,
-                note
-            )
-        )
-    }
-
-    fun updateAdvance(
-        id: Int,
-        amount: Double,
-        date: String,
-        note: String
-    ) {
-
-        writableDatabase.execSQL(
-            """
-            UPDATE advances SET
-            amount=?,
-            date=?,
-            note=?
-            WHERE id=?
-            """.trimIndent(),
-            arrayOf(
-                amount,
-                date,
-                note,
-                id
-            )
-        )
-    }
-
-    fun deleteAdvance(id: Int) {
-
-        writableDatabase.delete(
-            "advances",
-            "id=?",
-            arrayOf(id.toString())
-        )
-    }
-
-    fun getAdvances(workerId: Int): ArrayList<String> {
-
-        val list = ArrayList<String>()
-
-        val c = readableDatabase.rawQuery(
-            """
-            SELECT id,amount,date,note
-            FROM advances
-            WHERE worker_id=?
-            ORDER BY date DESC,id DESC
-            """.trimIndent(),
-            arrayOf(workerId.toString())
-        )
-
-        while (c.moveToNext()) {
-
-            val id = c.getInt(0)
-            val amount = c.getDouble(1)
-            val date = c.getString(2) ?: ""
-            val note = c.getString(3) ?: ""
-
-            list.add(
-                "$id|₹${amount.roundToInt()}|$date|$note"
-            )
+        if (cursor.moveToFirst()) {
+            total = cursor.getDouble(0)
         }
 
-        c.close()
-
-        return list
+        cursor.close()
+        return total
     }
 
-    fun getAttendanceMonth(
-        workerId: Int,
-        yearMonth: String
-    ): Triple<Int, Int, Int> {
+    fun getMonthCounts(
+        workerId: Long,
+        year: Int,
+        month: Int
+    ): Pair<Int, Int> {
+
+        val prefix = String.format(
+            Locale.getDefault(),
+            "%04d-%02d-",
+            year,
+            month + 1
+        )
 
         var present = 0
         var half = 0
-        var absent = 0
 
-        val c = readableDatabase.rawQuery(
+        val cursor = readableDatabase.rawQuery(
             """
             SELECT status
             FROM attendance
@@ -459,28 +472,29 @@ class DBHelper(context: Context) :
             """.trimIndent(),
             arrayOf(
                 workerId.toString(),
-                "$yearMonth%"
+                "$prefix%"
             )
         )
 
-        while (c.moveToNext()) {
+        while (cursor.moveToNext()) {
 
-            when (c.getString(0)) {
+            when (cursor.getString(0)) {
 
-                "Present" -> present++
+                "Present" -> {
+                    present++
+                }
 
-                "Half Day" -> half++
-
-                "Absent" -> absent++
+                "Half Day" -> {
+                    half++
+                }
             }
         }
 
-        c.close()
+        cursor.close()
 
-        return Triple(
+        return Pair(
             present,
-            half,
-            absent
+            half
         )
     }
 }
@@ -488,164 +502,117 @@ class DBHelper(context: Context) :
 class MainActivity : Activity() {
 
     private lateinit var db: DBHelper
-
     private lateinit var root: LinearLayout
-    private lateinit var title: TextView
+    private lateinit var content: LinearLayout
 
-    private var selectedDate: String =
-        SimpleDateFormat(
-            "yyyy-MM-dd",
-            Locale.getDefault()
-        ).format(Date())
+    private val blue =
+        Color.rgb(25, 118, 210)
 
-    private val blue = Color.rgb(25, 118, 210)
-    private val green = Color.rgb(46, 125, 50)
-    private val red = Color.rgb(198, 40, 40)
-    private val orange = Color.rgb(239, 108, 0)
-    private val gray = Color.rgb(245, 247, 250)
+    private val light =
+        Color.rgb(245, 248, 252)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    private var selectedDate =
+        todayDate()
 
+    companion object {
+        const val LOCATION_REQUEST = 101
+    }
+
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
         super.onCreate(savedInstanceState)
 
         db = DBHelper(this)
 
-        showHome()
+        home()
     }
 
-    private fun baseLayout(
-        screenTitle: String
-    ) {
+    private fun todayDate(): String {
+
+        return SimpleDateFormat(
+            "yyyy-MM-dd",
+            Locale.getDefault()
+        ).format(java.util.Date())
+    }
+
+    private fun dp(value: Int): Int {
+
+        return (
+            value *
+                resources.displayMetrics.density
+            ).toInt()
+    }
+
+    private fun money(
+        value: Double
+    ): String {
+
+        return String.format(
+            Locale.getDefault(),
+            "%.0f",
+            value
+        )
+    }
+
+    private fun createLayout(
+        screen: String
+    ): LinearLayout {
 
         root = LinearLayout(this)
 
-        root.orientation = LinearLayout.VERTICAL
-        root.setBackgroundColor(Color.WHITE)
+        root.orientation =
+            LinearLayout.VERTICAL
 
-        title = TextView(this)
-
-        title.text = screenTitle
-        title.textSize = 20f
-        title.setTextColor(Color.WHITE)
-        title.setPadding(
-            16,
-            18,
-            16,
-            18
+        root.setBackgroundColor(
+            Color.WHITE
         )
 
-        title.setBackgroundColor(blue)
+        val header =
+            TextView(this)
+
+        header.text = screen
+        header.textSize = 20f
+        header.setTextColor(
+            Color.WHITE
+        )
+
+        header.setPadding(
+            dp(16),
+            dp(14),
+            dp(16),
+            dp(14)
+        )
+
+        header.setBackgroundColor(
+            blue
+        )
 
         root.addView(
-            title,
+            header,
             LinearLayout.LayoutParams(
                 -1,
                 -2
             )
         )
 
-        setContentView(root)
-    }
+        content =
+            LinearLayout(this)
 
-    private fun button(
-        text: String,
-        click: () -> Unit
-    ): Button {
+        content.orientation =
+            LinearLayout.VERTICAL
 
-        val b = Button(this)
-
-        b.text = text
-        b.textSize = 14f
-        b.setAllCaps(false)
-
-        b.setOnClickListener {
-            click()
-        }
-
-        return b
-    }
-
-    private fun text(
-        value: String,
-        size: Float = 16f
-    ): TextView {
-
-        val t = TextView(this)
-
-        t.text = value
-        t.textSize = size
-        t.setTextColor(Color.DKGRAY)
-        t.setPadding(
-            12,
-            10,
-            12,
-            10
+        content.setPadding(
+            dp(10),
+            dp(10),
+            dp(10),
+            dp(10)
         )
 
-        return t
-    }
+        val scroll =
+            ScrollView(this)
 
-    private fun showHome() {
-
-        baseLayout("EDISON")
-
-        val scroll = ScrollView(this)
-
-        val box = LinearLayout(this)
-
-        box.orientation = LinearLayout.VERTICAL
-        box.setPadding(12, 12, 12, 12)
-
-        box.addView(
-            text(
-                "EDISON SOLAR WORK TRACKER",
-                22f
-            )
-        )
-
-        box.addView(
-            text(
-                "Worker • Attendance • Salary • Site"
-            )
-        )
-
-        box.addView(
-            button("👷 WORKERS") {
-                showWorkers()
-            }
-        )
-
-        box.addView(
-            button("📅 ATTENDANCE") {
-                showAttendance()
-            }
-        )
-
-        box.addView(
-            button("📍 SITE SUMMARY") {
-                showSiteSummary()
-            }
-        )
-
-        box.addView(
-            button("💰 SALARY") {
-                showSalary()
-            }
-        )
-
-        box.addView(
-            button("💵 ADVANCE") {
-                showAdvanceSelect()
-            }
-        )
-
-        box.addView(
-            button("📊 ALL WORKERS REPORT") {
-                showAllWorkersReport()
-            }
-        )
-
-        scroll.addView(box)
+        scroll.addView(content)
 
         root.addView(
             scroll,
@@ -657,21 +624,250 @@ class MainActivity : Activity() {
         )
 
         root.addView(
-            bottomNav()
+            bottomBar()
+        )
+
+        setContentView(root)
+
+        return content
+    }
+
+    private fun addTitle(
+        value: String
+    ) {
+
+        val t =
+            TextView(this)
+
+        t.text = value
+        t.textSize = 18f
+        t.setTextColor(
+            Color.DKGRAY
+        )
+
+        t.setPadding(
+            dp(5),
+            dp(5),
+            dp(5),
+            dp(10)
+        )
+
+        content.addView(t)
+    }
+
+    private fun addText(
+        value: String,
+        size: Float = 15f
+    ) {
+
+        val t =
+            TextView(this)
+
+        t.text = value
+        t.textSize = size
+        t.setTextColor(
+            Color.DKGRAY
+        )
+
+        t.setPadding(
+            dp(8),
+            dp(7),
+            dp(8),
+            dp(7)
+        )
+
+        content.addView(t)
+    }
+
+    private fun addTextTo(
+        parent: LinearLayout,
+        value: String,
+        size: Float = 15f
+    ) {
+
+        val t =
+            TextView(this)
+
+        t.text = value
+        t.textSize = size
+        t.setTextColor(
+            Color.DKGRAY
+        )
+
+        t.setPadding(
+            dp(6),
+            dp(5),
+            dp(6),
+            dp(5)
+        )
+
+        parent.addView(t)
+    }
+
+    private fun makeButton(
+        value: String,
+        action: () -> Unit
+    ): Button {
+
+        val b =
+            Button(this)
+
+        b.text = value
+        b.textSize = 13f
+        b.setAllCaps(false)
+
+        b.setOnClickListener {
+            action()
+        }
+
+        return b
+    }
+
+    private fun bottomBar(): LinearLayout {
+
+        val bar =
+            LinearLayout(this)
+
+        bar.orientation =
+            LinearLayout.HORIZONTAL
+
+        bar.setBackgroundColor(
+            Color.rgb(235, 242, 250)
+        )
+
+        val home =
+            makeButton("HOME") {
+                home()
+            }
+
+        val workers =
+            makeButton("WORKERS") {
+                workers()
+            }
+
+        val attend =
+            makeButton("ATTEND") {
+                attendance()
+            }
+
+        val salary =
+            makeButton("SALARY") {
+                salary()
+            }
+
+        bar.addView(
+            home,
+            LinearLayout.LayoutParams(
+                0,
+                -2,
+                1f
+            )
+        )
+
+        bar.addView(
+            workers,
+            LinearLayout.LayoutParams(
+                0,
+                -2,
+                1f
+            )
+        )
+
+        bar.addView(
+            attend,
+            LinearLayout.LayoutParams(
+                0,
+                -2,
+                1f
+            )
+        )
+
+        bar.addView(
+            salary,
+            LinearLayout.LayoutParams(
+                0,
+                -2,
+                1f
+            )
+        )
+
+        return bar
+    }
+
+    private fun home() {
+
+        createLayout("EDISON")
+
+        addTitle(
+            "☀ EDISON SOLAR WORK TRACKER"
+        )
+
+        addText(
+            "Workers • Attendance • Site • Salary"
+        )
+
+        content.addView(
+            makeButton("👷 WORKERS") {
+                workers()
+            }
+        )
+
+        content.addView(
+            makeButton("📅 ATTENDANCE") {
+                attendance()
+            }
+        )
+
+        content.addView(
+            makeButton("📍 SITE SUMMARY") {
+                siteSummary()
+            }
+        )
+
+        content.addView(
+            makeButton("💰 SALARY / PENDING") {
+                salary()
+            }
+        )
+
+        content.addView(
+            makeButton("💵 ADVANCE") {
+                advanceSelect()
+            }
+        )
+
+        content.addView(
+            makeButton("📊 ALL WORKERS REPORT") {
+                allWorkersReport()
+            }
         )
     }
 
-    private fun bottomNav(): LinearLayout {
+    private fun workers() {
 
-        val nav = LinearLayout(this)
+        createLayout("👷 WORKERS")
 
-        nav.orientation = LinearLayout.HORIZONTAL
-        nav.setPadding(4, 4, 4, 4)
-        nav.setBackgroundColor(Color.rgb(238, 244, 250))
+        addTitle("WORKERS")
 
-        val home = button("HOME") {
-            showHome()
+        content.addView(
+            makeButton("➕ ADD WORKER") {
+                workerDialog(null)
+            }
+        )
+
+        val list =
+            db.getWorkers()
+
+        if (list.isEmpty()) {
+
+            addText(
+                "No workers added."
+            )
+
+            return
         }
 
-        val workers = button("WORKERS") {
-            show
+        for (worker in list) {
+
+            val card =
+                LinearLayout(this)
