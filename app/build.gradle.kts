@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "com.edisonsolar.attendance"
+    namespace = "com.edisonsolar.businesspro"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.edisonsolar.attendance"
+        applicationId = "com.edisonsolar.businesspro"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "4.0"
+        versionCode = 1
+        versionName = "1.0"
     }
 
     compileOptions {
