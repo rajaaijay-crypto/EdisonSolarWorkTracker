@@ -4,7 +4,7 @@
 
     <application
         android:theme="@style/AppTheme"
-        android:label="EDISON SOLAR"
+        android:label="EDISON"
         android:allowBackup="true"
         android:supportsRtl="true">
 
