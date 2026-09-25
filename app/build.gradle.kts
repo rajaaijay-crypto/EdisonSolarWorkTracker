@@ -24,3 +24,12 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+
+    implementation("androidx.appcompat:appcompat:1.7.1")
+
+    implementation("androidx.core:core:1.17.0")
+
+    implementation("com.google.android.material:material:1.13.0")
+}
