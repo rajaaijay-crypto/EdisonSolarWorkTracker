@@ -15,6 +15,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -81,7 +82,6 @@ class DBHelper(context: Context) :
         oldVersion: Int,
         newVersion: Int
     ) {
-        // Keep existing data
     }
 
     fun workers(): List<Worker> {
@@ -97,11 +97,11 @@ class DBHelper(context: Context) :
 
                 result.add(
                     Worker(
-                        id = cursor.getLong(0),
-                        name = cursor.getString(1) ?: "",
-                        phone = cursor.getString(2) ?: "",
-                        salary = cursor.getDouble(3),
-                        type = cursor.getString(4) ?: "Monthly"
+                        cursor.getLong(0),
+                        cursor.getString(1) ?: "",
+                        cursor.getString(2) ?: "",
+                        cursor.getDouble(3),
+                        cursor.getString(4) ?: "Monthly"
                     )
                 )
             }
@@ -128,6 +128,50 @@ class DBHelper(context: Context) :
             "workers",
             null,
             values
+        )
+    }
+
+    fun updateWorker(
+        id: Long,
+        name: String,
+        phone: String,
+        salary: Double,
+        type: String
+    ) {
+
+        val values = ContentValues()
+
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("type", type)
+
+        writableDatabase.update(
+            "workers",
+            values,
+            "id=?",
+            arrayOf(id.toString())
+        )
+    }
+
+    fun deleteWorker(id: Long) {
+
+        writableDatabase.delete(
+            "attendance",
+            "worker_id=?",
+            arrayOf(id.toString())
+        )
+
+        writableDatabase.delete(
+            "advances",
+            "worker_id=?",
+            arrayOf(id.toString())
+        )
+
+        writableDatabase.delete(
+            "workers",
+            "id=?",
+            arrayOf(id.toString())
         )
     }
 
@@ -208,6 +252,61 @@ class DBHelper(context: Context) :
         }
 
         return 0.0
+    }
+
+    fun countStatus(status: String): Int {
+
+        val month =
+            SimpleDateFormat(
+                "yyyy-MM",
+                Locale.getDefault()
+            ).format(Date())
+
+        readableDatabase.rawQuery(
+            """
+            SELECT COUNT(*)
+            FROM attendance
+            WHERE status=?
+            AND date LIKE ?
+            """.trimIndent(),
+            arrayOf(
+                status,
+                "$month%"
+            )
+        ).use { cursor ->
+
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0)
+            }
+        }
+
+        return 0
+    }
+
+    fun workingDays(): Int {
+
+        val month =
+            SimpleDateFormat(
+                "yyyy-MM",
+                Locale.getDefault()
+            ).format(Date())
+
+        readableDatabase.rawQuery(
+            """
+            SELECT COUNT(DISTINCT date)
+            FROM attendance
+            WHERE date LIKE ?
+            AND (status='Present' OR status='Half Day')
+            """.trimIndent(),
+            arrayOf("$month%")
+        ).use { cursor ->
+
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0)
+            }
+        }
+
+        return 0
     }
 }
 
@@ -377,13 +476,28 @@ class MainActivity : Activity() {
         val root =
             layout("Dashboard")
 
+        val totalWorkers =
+            db.workers().size
+
+        val present =
+            db.countStatus("Present")
+
+        val absent =
+            db.countStatus("Absent")
+
+        val halfDay =
+            db.countStatus("Half Day")
+
+        val workingDays =
+            db.workingDays()
+
         content.addView(
             TextView(this).apply {
 
                 text =
-                    "Attendance • Salary • Advance"
+                    "📊 THIS MONTH"
 
-                textSize = 25f
+                textSize = 20f
 
                 setTextColor(
                     blue
@@ -393,30 +507,47 @@ class MainActivity : Activity() {
                     0,
                     0,
                     0,
-                    20
+                    12
                 )
             }
+        )
+
+        addDashboardCard(
+            "👷 TOTAL WORKERS",
+            totalWorkers.toString()
+        )
+
+        addDashboardCard(
+            "🟢 PRESENT",
+            present.toString()
+        )
+
+        addDashboardCard(
+            "🔴 ABSENT",
+            absent.toString()
+        )
+
+        addDashboardCard(
+            "🟡 HALF DAY",
+            halfDay.toString()
+        )
+
+        addDashboardCard(
+            "📅 TOTAL WORKING DAYS",
+            workingDays.toString()
         )
 
         content.addView(
             TextView(this).apply {
 
                 text =
-                    """
-                    👷 Workers: ${db.workers().size}
+                    "\nAttendance • Salary • Advance"
 
-                    🟢 Present
-                    🔴 Absent
-                    🟡 Half Day
+                textSize = 19f
 
-                    💰 Salary & Advance Management
-
-                    📍 Site / Customer Details
-
-                    📝 Attendance Notes
-                    """.trimIndent()
-
-                textSize = 18f
+                setTextColor(
+                    darkBlue
+                )
             }
         )
 
@@ -445,6 +576,84 @@ class MainActivity : Activity() {
         )
 
         setContentView(root)
+    }
+
+    private fun addDashboardCard(
+        title: String,
+        value: String
+    ) {
+
+        val box =
+            LinearLayout(this)
+
+        box.orientation =
+            LinearLayout.HORIZONTAL
+
+        box.setPadding(
+            14,
+            14,
+            14,
+            14
+        )
+
+        box.setBackgroundColor(
+            lightBlue
+        )
+
+        val titleView =
+            TextView(this)
+
+        titleView.text =
+            title
+
+        titleView.textSize =
+            17f
+
+        val valueView =
+            TextView(this)
+
+        valueView.text =
+            value
+
+        valueView.textSize =
+            24f
+
+        valueView.setTextColor(
+            blue
+        )
+
+        valueView.gravity =
+            android.view.Gravity.END
+
+        box.addView(
+            titleView,
+            LinearLayout.LayoutParams(
+                0,
+                -2,
+                1f
+            )
+        )
+
+        box.addView(
+            valueView,
+            LinearLayout.LayoutParams(
+                80,
+                -2
+            )
+        )
+
+        content.addView(box)
+
+        val space =
+            TextView(this)
+
+        content.addView(
+            space,
+            LinearLayout.LayoutParams(
+                -1,
+                8
+            )
+        )
     }
 
     private fun workers() {
@@ -512,7 +721,19 @@ class MainActivity : Activity() {
             box.addView(text)
 
             box.addView(
-                button("✏️ ATTENDANCE / EDIT") {
+                button("✏️ EDIT WORKER") {
+                    editWorker(worker)
+                }
+            )
+
+            box.addView(
+                button("🗑️ DELETE WORKER") {
+                    confirmDeleteWorker(worker)
+                }
+            )
+
+            box.addView(
+                button("📅 ATTENDANCE / EDIT") {
                     attendanceFor(worker)
                 }
             )
@@ -527,8 +748,6 @@ class MainActivity : Activity() {
 
             val space =
                 TextView(this)
-
-            space.text = ""
 
             content.addView(
                 space,
@@ -562,8 +781,7 @@ class MainActivity : Activity() {
         phone.hint =
             "Mobile Number"
 
-        phone.inputType =
-            2
+        phone.inputType = 2
 
         val salary =
             EditText(this)
@@ -571,8 +789,7 @@ class MainActivity : Activity() {
         salary.hint =
             "Salary"
 
-        salary.inputType =
-            2
+        salary.inputType = 2
 
         val type =
             EditText(this)
@@ -634,6 +851,153 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun editWorker(
+        worker: Worker
+    ) {
+
+        val box =
+            LinearLayout(this)
+
+        box.orientation =
+            LinearLayout.VERTICAL
+
+        val name =
+            EditText(this)
+
+        name.setText(
+            worker.name
+        )
+
+        name.hint =
+            "Worker Name"
+
+        val phone =
+            EditText(this)
+
+        phone.setText(
+            worker.phone
+        )
+
+        phone.hint =
+            "Mobile Number"
+
+        phone.inputType = 2
+
+        val salary =
+            EditText(this)
+
+        salary.setText(
+            worker.salary.toString()
+        )
+
+        salary.hint =
+            "Salary"
+
+        salary.inputType = 2
+
+        val type =
+            EditText(this)
+
+        type.setText(
+            worker.type
+        )
+
+        type.hint =
+            "Daily / Monthly"
+
+        box.addView(name)
+        box.addView(phone)
+        box.addView(salary)
+        box.addView(type)
+
+        AlertDialog.Builder(this)
+            .setTitle(
+                "Edit Worker"
+            )
+            .setView(box)
+            .setPositiveButton(
+                "UPDATE"
+            ) { _, _ ->
+
+                val workerName =
+                    name.text.toString().trim()
+
+                if (workerName.isEmpty()) {
+
+                    Toast.makeText(
+                        this,
+                        "Enter worker name",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    return@setPositiveButton
+                }
+
+                db.updateWorker(
+                    worker.id,
+                    workerName,
+                    phone.text.toString().trim(),
+                    salary.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    type.text.toString()
+                        .trim()
+                        .ifBlank {
+                            "Monthly"
+                        }
+                )
+
+                Toast.makeText(
+                    this,
+                    "Worker updated",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                workers()
+            }
+            .setNegativeButton(
+                "CANCEL",
+                null
+            )
+            .show()
+    }
+
+    private fun confirmDeleteWorker(
+        worker: Worker
+    ) {
+
+        AlertDialog.Builder(this)
+            .setTitle(
+                "Delete Worker?"
+            )
+            .setMessage(
+                "Delete ${worker.name}?\n\n" +
+                        "Worker attendance and advance records " +
+                        "will also be deleted."
+            )
+            .setPositiveButton(
+                "DELETE"
+            ) { _, _ ->
+
+                db.deleteWorker(
+                    worker.id
+                )
+
+                Toast.makeText(
+                    this,
+                    "Worker deleted",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                workers()
+            }
+            .setNegativeButton(
+                "CANCEL",
+                null
+            )
+            .show()
+    }
+
     private fun attendance() {
 
         val root =
@@ -659,23 +1023,7 @@ class MainActivity : Activity() {
             }
         )
 
-        val workerList =
-            db.workers()
-
-        if (workerList.isEmpty()) {
-
-            content.addView(
-                TextView(this).apply {
-
-                    text =
-                        "\nFirst add workers."
-
-                    textSize = 18f
-                }
-            )
-        }
-
-        workerList.forEach { worker ->
+        db.workers().forEach { worker ->
 
             content.addView(
                 button(
@@ -787,23 +1135,7 @@ class MainActivity : Activity() {
         val root =
             layout("Salary & Advance")
 
-        val workerList =
-            db.workers()
-
-        if (workerList.isEmpty()) {
-
-            content.addView(
-                TextView(this).apply {
-
-                    text =
-                        "No workers added yet."
-
-                    textSize = 18f
-                }
-            )
-        }
-
-        workerList.forEach { worker ->
+        db.workers().forEach { worker ->
 
             val advance =
                 db.advance(worker.id)
@@ -854,13 +1186,8 @@ class MainActivity : Activity() {
 
             content.addView(box)
 
-            val space =
-                TextView(this)
-
-            space.text = ""
-
             content.addView(
-                space,
+                TextView(this),
                 LinearLayout.LayoutParams(
                     -1,
                     10
@@ -887,8 +1214,7 @@ class MainActivity : Activity() {
         amount.hint =
             "Advance Amount"
 
-        amount.inputType =
-            2
+        amount.inputType = 2
 
         val note =
             EditText(this)
