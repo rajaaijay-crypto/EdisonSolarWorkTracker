@@ -1,29 +1,766 @@
-name: Build EDISON SOLAR APK
+package com.edisonsolar.attendance
 
-on:
-  push:
-    branches: ["main"]
-  workflow_dispatch:
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.Context
+import android.graphics.Color
+import android.os.Bundle
+import android.view.View
+import android.widget.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+data class Worker(
+    val id: Long,
+    val name: String,
+    val phone: String,
+    val salary: Double,
+    val type: String
+)
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+class DBHelper(context: Context) :
+    android.database.sqlite.SQLiteOpenHelper(
+        context,
+        "edison_solar.db",
+        null,
+        1
+    ) {
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+    override fun onCreate(db: android.database.sqlite.SQLiteDatabase) {
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        db.execSQL(
+            """
+            CREATE TABLE workers(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                phone TEXT,
+                salary REAL,
+                type TEXT
+            )
+            """.trimIndent()
+        )
 
-      - name: Create Android project
-        shell: bash
-        run: |
-          mkdir -p app/src/main/java/com/edisonsolar/app
-          mkdir -p app/src/main/assets
+        db.execSQL(
+            """
+            CREATE TABLE attendance(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id INTEGER,
+                date TEXT,
+                status TEXT
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE advances(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id INTEGER,
+                date TEXT,
+                amount REAL,
+                note TEXT
+            )
+            """.trimIndent()
+        )
+    }
+
+    override fun onUpgrade(
+        db: android.database.sqlite.SQLiteDatabase,
+        oldVersion: Int,
+        newVersion: Int
+    ) {
+    }
+
+    fun getWorkers(): List<Worker> {
+
+        val list = mutableListOf<Worker>()
+
+        readableDatabase.rawQuery(
+            "SELECT * FROM workers ORDER BY name",
+            null
+        ).use { cursor ->
+
+            while (cursor.moveToNext()) {
+
+                list.add(
+                    Worker(
+                        cursor.getLong(0),
+                        cursor.getString(1),
+                        cursor.getString(2),
+                        cursor.getDouble(3),
+                        cursor.getString(4)
+                    )
+                )
+            }
+        }
+
+        return list
+    }
+
+    fun addWorker(
+        name: String,
+        phone: String,
+        salary: Double,
+        type: String
+    ) {
+
+        val values = android.content.ContentValues()
+
+        values.put("name", name)
+        values.put("phone", phone)
+        values.put("salary", salary)
+        values.put("type", type)
+
+        writableDatabase.insert(
+            "workers",
+            null,
+            values
+        )
+    }
+
+    fun markAttendance(
+        workerId: Long,
+        status: String
+    ) {
+
+        val date =
+            SimpleDateFormat(
+                "yyyy-MM-dd",
+                Locale.getDefault()
+            ).format(Date())
+
+        writableDatabase.delete(
+            "attendance",
+            "worker_id=? AND date=?",
+            arrayOf(
+                workerId.toString(),
+                date
+            )
+        )
+
+        val values =
+            android.content.ContentValues()
+
+        values.put("worker_id", workerId)
+        values.put("date", date)
+        values.put("status", status)
+
+        writableDatabase.insert(
+            "attendance",
+            null,
+            values
+        )
+    }
+
+    fun addAdvance(
+        workerId: Long,
+        amount: Double,
+        note: String
+    ) {
+
+        val date =
+            SimpleDateFormat(
+                "yyyy-MM-dd",
+                Locale.getDefault()
+            ).format(Date())
+
+        val values =
+            android.content.ContentValues()
+
+        values.put("worker_id", workerId)
+        values.put("date", date)
+        values.put("amount", amount)
+        values.put("note", note)
+
+        writableDatabase.insert(
+            "advances",
+            null,
+            values
+        )
+    }
+
+    fun getAdvanceTotal(workerId: Long): Double {
+
+        readableDatabase.rawQuery(
+            "SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=?",
+            arrayOf(workerId.toString())
+        ).use { cursor ->
+
+            if (cursor.moveToFirst()) {
+                return cursor.getDouble(0)
+            }
+        }
+
+        return 0.0
+    }
+}
+
+class MainActivity : Activity() {
+
+    private lateinit var db: DBHelper
+
+    private lateinit var content:
+        LinearLayout
+
+    private val blue =
+        Color.rgb(25, 118, 210)
+
+    private val lightBlue =
+        Color.rgb(227, 242, 253)
+
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
+
+        super.onCreate(savedInstanceState)
+
+        db = DBHelper(this)
+
+        showHome()
+    }
+
+    private fun createBase(
+        title: String
+    ): LinearLayout {
+
+        val root =
+            LinearLayout(this)
+
+        root.orientation =
+            LinearLayout.VERTICAL
+
+        root.setBackgroundColor(
+            Color.WHITE
+        )
+
+        val header =
+            TextView(this)
+
+        header.text =
+            "⚡ EDISON SOLAR\n$title"
+
+        header.textSize = 21f
+
+        header.setTextColor(
+            Color.WHITE
+        )
+
+        header.setPadding(
+            16,
+            20,
+            10,
+            20
+        )
+
+        header.setBackgroundColor(
+            blue
+        )
+
+        root.addView(
+            header,
+            LinearLayout.LayoutParams(
+                -1,
+                -2
+            )
+        )
+
+        val scroll =
+            ScrollView(this)
+
+        content =
+            LinearLayout(this)
+
+        content.orientation =
+            LinearLayout.VERTICAL
+
+        content.setPadding(
+            16,
+            16,
+            16,
+            16
+        )
+
+        scroll.addView(content)
+
+        root.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                -1,
+                0,
+                1f
+            )
+        )
+
+        val navigation =
+            LinearLayout(this)
+
+        navigation.setBackgroundColor(
+            lightBlue
+        )
+
+        val buttons =
+            listOf(
+                "Home",
+                "Workers",
+                "Attendance",
+                "Salary"
+            )
+
+        buttons.forEach { name ->
+
+            val button =
+                Button(this)
+
+            button.text = name
+
+            button.setOnClickListener {
+
+                when (name) {
+
+                    "Home" ->
+                        showHome()
+
+                    "Workers" ->
+                        showWorkers()
+
+                    "Attendance" ->
+                        showAttendance()
+
+                    "Salary" ->
+                        showSalary()
+                }
+            }
+
+            navigation.addView(
+                button,
+                LinearLayout.LayoutParams(
+                    0,
+                    -2,
+                    1f
+                )
+            )
+        }
+
+        root.addView(
+            navigation
+        )
+
+        return root
+    }
+
+    private fun createButton(
+        text: String,
+        action: () -> Unit
+    ): Button {
+
+        val button =
+            Button(this)
+
+        button.text = text
+
+        button.setOnClickListener {
+            action()
+        }
+
+        return button
+    }
+
+    private fun showHome() {
+
+        val root =
+            createBase("Dashboard")
+
+        val title =
+            TextView(this)
+
+        title.text =
+            "Attendance • Salary • Advance"
+
+        title.textSize = 24f
+
+        title.setTextColor(
+            blue
+        )
+
+        content.addView(title)
+
+        val workers =
+            db.getWorkers()
+
+        val info =
+            TextView(this)
+
+        info.text =
+            """
+            Workers: ${workers.size}
+            
+            Attendance:
+            Mark Present / Absent / Half Day
+            
+            Salary:
+            Daily / Monthly
+            
+            Advance:
+            Add worker advance
+            
+            Balance:
+            Salary - Advance
+            """.trimIndent()
+
+        info.textSize = 18f
+
+        content.addView(info)
+
+        content.addView(
+            createButton(
+                "＋ Add Worker"
+            ) {
+                showWorkers()
+            }
+        )
+
+        setContentView(root)
+    }
+
+    private fun showWorkers() {
+
+        val root =
+            createBase("Workers")
+
+        content.addView(
+            createButton(
+                "＋ Add Worker"
+            ) {
+                showAddWorkerDialog()
+            }
+        )
+
+        val workers =
+            db.getWorkers()
+
+        workers.forEach { worker ->
+
+            val box =
+                LinearLayout(this)
+
+            box.orientation =
+                LinearLayout.VERTICAL
+
+            box.setPadding(
+                12,
+                12,
+                12,
+                12
+            )
+
+            box.setBackgroundColor(
+                lightBlue
+            )
+
+            val text =
+                TextView(this)
+
+            text.text =
+                """
+                ${worker.name}
+                Mobile: ${worker.phone}
+                Salary: ₹${worker.salary}
+                Type: ${worker.type}
+                """.trimIndent()
+
+            text.textSize = 17f
+
+            box.addView(text)
+
+            content.addView(
+                box,
+                LinearLayout.LayoutParams(
+                    -1,
+                    -2
+                ).apply {
+                    setMargins(
+                        0,
+                        8,
+                        0,
+                        0
+                    )
+                }
+            )
+        }
+
+        setContentView(root)
+    }
+
+    private fun showAddWorkerDialog() {
+
+        val layout =
+            LinearLayout(this)
+
+        layout.orientation =
+            LinearLayout.VERTICAL
+
+        layout.setPadding(
+            25,
+            10,
+            25,
+            10
+        )
+
+        val name =
+            EditText(this)
+
+        name.hint =
+            "Worker Name"
+
+        val phone =
+            EditText(this)
+
+        phone.hint =
+            "Mobile Number"
+
+        val salary =
+            EditText(this)
+
+        salary.hint =
+            "Salary"
+
+        salary.inputType =
+            2
+
+        val type =
+            EditText(this)
+
+        type.hint =
+            "Daily / Monthly"
+
+        layout.addView(name)
+        layout.addView(phone)
+        layout.addView(salary)
+        layout.addView(type)
+
+        AlertDialog.Builder(this)
+            .setTitle("Add Worker")
+            .setView(layout)
+            .setPositiveButton("SAVE") { _, _ ->
+
+                db.addWorker(
+                    name.text.toString(),
+                    phone.text.toString(),
+                    salary.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0,
+                    type.text.toString()
+                        .ifBlank {
+                            "Monthly"
+                        }
+                )
+
+                showWorkers()
+            }
+            .setNegativeButton(
+                "CANCEL",
+                null
+            )
+            .show()
+    }
+
+    private fun showAttendance() {
+
+        val root =
+            createBase(
+                "Today's Attendance"
+            )
+
+        db.getWorkers()
+            .forEach { worker ->
+
+                val name =
+                    TextView(this)
+
+                name.text =
+                    worker.name
+
+                name.textSize =
+                    18f
+
+                content.addView(name)
+
+                val row =
+                    LinearLayout(this)
+
+                listOf(
+                    "Present",
+                    "Absent",
+                    "Half Day"
+                ).forEach { status ->
+
+                    row.addView(
+                        createButton(
+                            status
+                        ) {
+
+                            db.markAttendance(
+                                worker.id,
+                                status
+                            )
+
+                            Toast.makeText(
+                                this,
+                                "${worker.name}: $status",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }
+
+                content.addView(row)
+            }
+
+        setContentView(root)
+    }
+
+    private fun showSalary() {
+
+        val root =
+            createBase(
+                "Salary & Advance"
+            )
+
+        db.getWorkers()
+            .forEach { worker ->
+
+                val advance =
+                    db.getAdvanceTotal(
+                        worker.id
+                    )
+
+                val balance =
+                    worker.salary -
+                            advance
+
+                val box =
+                    LinearLayout(this)
+
+                box.orientation =
+                    LinearLayout.VERTICAL
+
+                box.setPadding(
+                    12,
+                    12,
+                    12,
+                    12
+                )
+
+                box.setBackgroundColor(
+                    lightBlue
+                )
+
+                val text =
+                    TextView(this)
+
+                text.text =
+                    """
+                    ${worker.name}
+                    
+                    Salary: ₹${worker.salary}
+                    Advance: ₹$advance
+                    Balance: ₹$balance
+                    """.trimIndent()
+
+                text.textSize =
+                    17f
+
+                box.addView(text)
+
+                box.addView(
+                    createButton(
+                        "＋ Add Advance"
+                    ) {
+                        showAdvanceDialog(
+                            worker
+                        )
+                    }
+                )
+
+                content.addView(
+                    box,
+                    LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                    ).apply {
+                        setMargins(
+                            0,
+                            8,
+                            0,
+                            0
+                        )
+                    }
+                )
+            }
+
+        setContentView(root)
+    }
+
+    private fun showAdvanceDialog(
+        worker: Worker
+    ) {
+
+        val layout =
+            LinearLayout(this)
+
+        layout.orientation =
+            LinearLayout.VERTICAL
+
+        layout.setPadding(
+            25,
+            10,
+            25,
+            10
+        )
+
+        val amount =
+            EditText(this)
+
+        amount.hint =
+            "Advance Amount"
+
+        amount.inputType =
+            2
+
+        val note =
+            EditText(this)
+
+        note.hint =
+            "Note"
+
+        layout.addView(amount)
+        layout.addView(note)
+
+        AlertDialog.Builder(this)
+            .setTitle(
+                "Advance - ${worker.name}"
+            )
+            .setView(layout)
+            .setPositiveButton("SAVE") { _, _ ->
+
+                val value =
+                    amount.text.toString()
+                        .toDoubleOrNull()
+                        ?: 0.0
+
+                db.addAdvance(
+                    worker.id,
+                    value,
+                    note.text.toString()
+                )
+
+                showSalary()
+            }
+            .setNegativeButton(
+                "CANCEL",
+                null
+            )
+            .show()
+    }
+}
