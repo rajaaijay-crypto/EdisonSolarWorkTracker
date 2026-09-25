@@ -24,16 +24,42 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Find Android project
+        shell: bash
+        run: |
+          echo "Searching for Gradle project..."
+
+          SETTINGS=$(find . -type f \( \
+            -name "settings.gradle.kts" -o \
+            -name "settings.gradle" \
+          \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERROR: settings.gradle.kts or settings.gradle not found."
+            echo "Repository does not contain an Android Gradle project."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Gradle project found:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
       - name: Build APK
-        run: gradle :app:assembleDebug
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+          gradle :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Edison-Solar-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: '**/app/build/outputs/apk/debug/app-debug.apk'
