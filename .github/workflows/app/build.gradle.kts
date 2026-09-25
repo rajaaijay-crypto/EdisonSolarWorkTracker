@@ -1,50 +1,22 @@
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+settings.gradle.kts
+build.gradle.kts
+gradle.properties
 
-android {
-    namespace = "com.edisonsolar.worktracker"
-    compileSdk = 35
+app/
+  build.gradle.kts
+  src/
+    main/
+      AndroidManifest.xml
+      java/
+        com/
+          edisonsolar/
+            attendance/
+              MainActivity.kt
+      res/
+        values/
+          colors.xml
+          styles.xml
 
-    defaultConfig {
-        applicationId = "com.edisonsolar.worktracker"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
-
-kotlin {
-    jvmToolchain(17)
-}
-
-dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.activity:activity-ktx:1.10.0")
-    implementation("com.google.android.gms:play-services-location:21.3.0")
-}
+.github/
+  workflows/
+    build-apk.yml
