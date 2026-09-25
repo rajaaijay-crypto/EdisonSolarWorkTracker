@@ -1,22 +1,26 @@
-settings.gradle.kts
-build.gradle.kts
-gradle.properties
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
 
-app/
-  build.gradle.kts
-  src/
-    main/
-      AndroidManifest.xml
-      java/
-        com/
-          edisonsolar/
-            attendance/
-              MainActivity.kt
-      res/
-        values/
-          colors.xml
-          styles.xml
+android {
+    namespace = "com.edisonsolar.attendance"
+    compileSdk = 35
 
-.github/
-  workflows/
-    build-apk.yml
+    defaultConfig {
+        applicationId = "com.edisonsolar.attendance"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 3
+        versionName = "3.0"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
