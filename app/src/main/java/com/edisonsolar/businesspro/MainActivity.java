@@ -1,27 +1,46 @@
 package com.edisonsolar.businesspro;
 
 import android.Manifest;
-import android.app.*;
-import android.content.*;
+import android.app.AlertDialog;
+import android.app.DatePickerDialog;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.*;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.pdf.PdfDocument;
-import android.location.*;
+import android.location.Location;
+import android.location.LocationManager;
 import android.net.Uri;
-import android.os.*;
+import android.os.Bundle;
+import android.os.Environment;
 import android.provider.MediaStore;
-import android.view.*;
-import android.widget.*;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -41,11 +60,9 @@ public class MainActivity extends AppCompatActivity {
 
     static final int LOC = 100;
     static final int CAMERA = 101;
-    static final int GALLERY = 102;
-    static final int CAPTURE = 103;
 
     @Override
-    public void onCreate(Bundle b) {
+    protected void onCreate(Bundle b) {
         super.onCreate(b);
 
         db = new DBHelper(this);
@@ -66,13 +83,19 @@ public class MainActivity extends AppCompatActivity {
         return t;
     }
 
+    LinearLayout vertical() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setPadding(20, 10, 20, 10);
+        return l;
+    }
+
     void base(String title) {
 
         ScrollView sv = new ScrollView(this);
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-
         root.setPadding(16, 16, 16, 30);
         root.setBackgroundColor(bg);
 
@@ -81,11 +104,13 @@ public class MainActivity extends AppCompatActivity {
         setContentView(sv);
 
         LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
 
         Button back = new Button(this);
         back.setText("‹");
         back.setTextSize(28);
+        back.setAllCaps(false);
 
         back.setOnClickListener(v -> showHome());
 
@@ -120,11 +145,17 @@ public class MainActivity extends AppCompatActivity {
         }
 
         im.setAdjustViewBounds(true);
+        im.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
 
-        root.addView(
-                im,
-                new LinearLayout.LayoutParams(-1, 135)
-        );
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        -1,
+                        135
+                );
+
+        p.setMargins(0, 5, 0, 10);
+
+        root.addView(im, p);
     }
 
     Button btn(
@@ -142,14 +173,19 @@ public class MainActivity extends AppCompatActivity {
 
         b.setOnClickListener(l);
 
-        GradientDrawable g = new GradientDrawable();
+        android.graphics.drawable.GradientDrawable g =
+                new android.graphics.drawable.GradientDrawable();
+
         g.setColor(color);
         g.setCornerRadius(18);
 
         b.setBackground(g);
 
         LinearLayout.LayoutParams p =
-                new LinearLayout.LayoutParams(-1, 54);
+                new LinearLayout.LayoutParams(
+                        -1,
+                        54
+                );
 
         p.setMargins(0, 6, 0, 6);
 
@@ -165,7 +201,10 @@ public class MainActivity extends AppCompatActivity {
         t.setBackgroundColor(Color.WHITE);
 
         LinearLayout.LayoutParams p =
-                new LinearLayout.LayoutParams(-1, -2);
+                new LinearLayout.LayoutParams(
+                        -1,
+                        -2
+                );
 
         p.setMargins(0, 5, 0, 5);
 
@@ -180,7 +219,7 @@ public class MainActivity extends AppCompatActivity {
 
         e.setHint(hint);
         e.setText(value);
-
+        e.setTextSize(15);
         e.setPadding(12, 8, 12, 8);
 
         return e;
@@ -192,6 +231,19 @@ public class MainActivity extends AppCompatActivity {
                 "dd-MM-yyyy",
                 Locale.getDefault()
         ).format(new Date());
+    }
+
+    double num(EditText e) {
+
+        try {
+            return Double.parseDouble(
+                    e.getText()
+                            .toString()
+                            .trim()
+            );
+        } catch (Exception ex) {
+            return 0;
+        }
     }
 
     void showHome() {
@@ -271,7 +323,9 @@ public class MainActivity extends AppCompatActivity {
                 )
         );
 
-        for (Company c : db.companies()) {
+        ArrayList<Company> list = db.companies();
+
+        for (Company c : list) {
 
             String s =
                     c.name +
@@ -281,40 +335,50 @@ public class MainActivity extends AppCompatActivity {
                     db.countProjects(c.id) +
                     " | kW: " +
                     DBHelper.fmt(db.companyKw(c.id)) +
-
                     "\nCollection: ₹" +
                     DBHelper.fmt(
                             db.companyCollection(c.id)
                     ) +
-
                     " | Expenses: ₹" +
                     DBHelper.fmt(
                             db.companyExpenses(c.id)
                     ) +
-
                     "\nPending: ₹" +
                     DBHelper.fmt(
                             db.companyValue(c.id)
-                            - db.companyCollection(c.id)
+                                    - db.companyCollection(c.id)
                     ) +
-
                     " | Profit: ₹" +
                     DBHelper.fmt(
                             db.companyValue(c.id)
-                            - db.companyExpenses(c.id)
+                                    - db.companyExpenses(c.id)
                     );
 
             root.addView(card(s));
 
-            LinearLayout row =
-                    new LinearLayout(this);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+
+            Button edit = btn(
+                    "Edit",
+                    blue,
+                    v -> companyDialog(c)
+            );
+
+            Button del = btn(
+                    "Delete",
+                    red,
+                    v -> confirm(
+                            "Delete company?",
+                            () -> {
+                                db.deleteCompany(c.id);
+                                companies();
+                            }
+                    )
+            );
 
             row.addView(
-                    btn(
-                            "Edit",
-                            blue,
-                            v -> companyDialog(c)
-                    ),
+                    edit,
                     new LinearLayout.LayoutParams(
                             0,
                             52,
@@ -323,17 +387,7 @@ public class MainActivity extends AppCompatActivity {
             );
 
             row.addView(
-                    btn(
-                            "Delete",
-                            red,
-                            v -> confirm(
-                                    "Delete company?",
-                                    () -> {
-                                        db.deleteCompany(c.id);
-                                        companies();
-                                    }
-                            )
-                    ),
+                    del,
                     new LinearLayout.LayoutParams(
                             0,
                             52,
@@ -347,9 +401,7 @@ public class MainActivity extends AppCompatActivity {
                     btn(
                             "Company Report / WhatsApp",
                             purple,
-                            v -> shareText(
-                                    companyReport(c)
-                            )
+                            v -> shareText(companyReport(c))
                     )
             );
         }
@@ -358,44 +410,64 @@ public class MainActivity extends AppCompatActivity {
     String companyReport(Company c) {
 
         StringBuilder s =
-                new StringBuilder(
-                        c.name +
-                        "\nPhone: " +
-                        c.phone +
-                        "\n\n"
-                );
+                new StringBuilder();
+
+        s.append("EDISON SOLAR MANAGER PRO\n\n");
+
+        s.append("COMPANY: ")
+                .append(c.name)
+                .append("\n");
+
+        s.append("PHONE: ")
+                .append(c.phone)
+                .append("\n\n");
 
         for (Project p : db.projects()) {
 
             if (p.companyId == c.id) {
 
-                s.append(
-                        p.number +
-                        " | " +
-                        p.customer +
-                        " | " +
-                        p.kw +
-                        " kW\n"
-                );
+                s.append("------------------------\n");
 
-                s.append(
-                        "₹" +
-                        p.amount +
-                        " | Collection ₹" +
-                        db.collection(p.id) +
-                        " | Pending ₹" +
-                        db.pending(p.id) +
-                        " | Expenses ₹" +
-                        db.expenses(p.id) +
-                        " | Profit ₹" +
-                        db.profit(p.id) +
-                        "\n"
-                );
+                s.append(p.number)
+                        .append(" | ")
+                        .append(p.customer)
+                        .append("\n");
 
-                s.append(
-                        p.site +
-                        "\n\n"
-                );
+                s.append("Solar: ")
+                        .append(p.kw)
+                        .append(" kW\n");
+
+                s.append("Amount: ₹")
+                        .append(DBHelper.fmt(p.amount))
+                        .append("\n");
+
+                s.append("Collection: ₹")
+                        .append(DBHelper.fmt(
+                                db.collection(p.id)
+                        ))
+                        .append("\n");
+
+                s.append("Pending: ₹")
+                        .append(DBHelper.fmt(
+                                db.pending(p.id)
+                        ))
+                        .append("\n");
+
+                s.append("Expenses: ₹")
+                        .append(DBHelper.fmt(
+                                db.expenses(p.id)
+                        ))
+                        .append("\n");
+
+                s.append("Profit: ₹")
+                        .append(DBHelper.fmt(
+                                db.profit(p.id)
+                        ))
+                        .append("\n");
+
+                s.append("Site: ")
+                        .append(p.site)
+                        .append("\n\n");
             }
         }
 
@@ -406,17 +478,15 @@ public class MainActivity extends AppCompatActivity {
 
         LinearLayout l = vertical();
 
-        EditText n =
-                field(
-                        "Company Name",
-                        old == null ? "" : old.name
-                );
+        EditText n = field(
+                "Company Name",
+                old == null ? "" : old.name
+        );
 
-        EditText p =
-                field(
-                        "Phone",
-                        old == null ? "" : old.phone
-                );
+        EditText p = field(
+                "Phone",
+                old == null ? "" : old.phone
+        );
 
         l.addView(n);
         l.addView(p);
@@ -440,39 +510,41 @@ public class MainActivity extends AppCompatActivity {
                         .create();
 
         d.setOnShowListener(x ->
-                d.getButton(-1).setOnClickListener(v -> {
+                d.getButton(-1)
+                        .setOnClickListener(v -> {
 
-                    if (
-                            n.getText()
-                                    .toString()
-                                    .trim()
-                                    .isEmpty()
-                    ) {
+                            String name =
+                                    n.getText()
+                                            .toString()
+                                            .trim();
 
-                        n.setError("Required");
-                        return;
-                    }
+                            if (name.isEmpty()) {
+                                n.setError("Required");
+                                return;
+                            }
 
-                    if (old == null) {
+                            if (old == null) {
 
-                        db.addCompany(
-                                n.getText().toString(),
-                                p.getText().toString()
-                        );
+                                db.addCompany(
+                                        name,
+                                        p.getText()
+                                                .toString()
+                                );
 
-                    } else {
+                            } else {
 
-                        db.updateCompany(
-                                old.id,
-                                n.getText().toString(),
-                                p.getText().toString()
-                        );
-                    }
+                                db.updateCompany(
+                                        old.id,
+                                        name,
+                                        p.getText()
+                                                .toString()
+                                );
+                            }
 
-                    d.dismiss();
+                            d.dismiss();
 
-                    companies();
-                })
+                            companies();
+                        })
         );
 
         d.show();
@@ -497,39 +569,33 @@ public class MainActivity extends AppCompatActivity {
                             p.number +
                             " • " +
                             p.company +
-
                             "\nCustomer: " +
                             p.customer +
                             " | " +
                             p.kw +
                             " kW" +
-
+                            "\nPhone: " +
+                            p.phone +
                             "\nSite: " +
                             p.site +
-
                             "\nAmount: ₹" +
                             DBHelper.fmt(p.amount) +
-
-                            " | Collection: ₹" +
+                            "\nCollection: ₹" +
                             DBHelper.fmt(
                                     db.collection(p.id)
                             ) +
-
                             " | Pending: ₹" +
                             DBHelper.fmt(
                                     db.pending(p.id)
                             ) +
-
                             "\nExpenses: ₹" +
                             DBHelper.fmt(
                                     db.expenses(p.id)
                             ) +
-
-                            " | Site Profit: ₹" +
+                            " | Profit: ₹" +
                             DBHelper.fmt(
                                     db.profit(p.id)
                             ) +
-
                             "\n" +
                             p.date +
                             " • " +
@@ -550,13 +616,11 @@ public class MainActivity extends AppCompatActivity {
     void projectMenu(Project p) {
 
         new AlertDialog.Builder(this)
-
                 .setTitle(
                         p.number +
                         " • " +
                         p.customer
                 )
-
                 .setItems(
                         new String[]{
                                 "Edit Project",
@@ -568,50 +632,49 @@ public class MainActivity extends AppCompatActivity {
                                 "WhatsApp Report",
                                 "Delete Project"
                         },
-
                         (d, w) -> {
 
-                            if (w == 0) {
+                            switch (w) {
 
-                                projectDialog(p);
+                                case 0:
+                                    projectDialog(p);
+                                    break;
 
-                            } else if (w == 1) {
+                                case 1:
+                                    projectPayments(p);
+                                    break;
 
-                                projectPayments(p);
+                                case 2:
+                                    projectExpenses(p);
+                                    break;
 
-                            } else if (w == 2) {
+                                case 3:
+                                    photos(p);
+                                    break;
 
-                                projectExpenses(p);
+                                case 4:
+                                    gpsMap(p);
+                                    break;
 
-                            } else if (w == 3) {
+                                case 5:
+                                    createPdf(p);
+                                    break;
 
-                                photos(p);
+                                case 6:
+                                    shareText(
+                                            projectReport(p)
+                                    );
+                                    break;
 
-                            } else if (w == 4) {
-
-                                gpsMap(p);
-
-                            } else if (w == 5) {
-
-                                createPdf(p);
-
-                            } else if (w == 6) {
-
-                                shareText(
-                                        projectReport(p)
-                                );
-
-                            } else {
-
-                                confirm(
-                                        "Delete this project and its records?",
-                                        () -> {
-
-                                            db.deleteProject(p.id);
-
-                                            projects();
-                                        }
-                                );
+                                case 7:
+                                    confirm(
+                                            "Delete this project and its records?",
+                                            () -> {
+                                                db.deleteProject(p.id);
+                                                projects();
+                                            }
+                                    );
+                                    break;
                             }
                         }
                 )
@@ -621,9 +684,11 @@ public class MainActivity extends AppCompatActivity {
     String projectReport(Project p) {
 
         return
-                "EDISON SOLAR MANAGER PRO\n" +
+                "EDISON SOLAR MANAGER PRO\n\n" +
 
+                "PROJECT: " +
                 p.number +
+
                 "\nCompany: " +
                 p.company +
 
@@ -644,263 +709,4 @@ public class MainActivity extends AppCompatActivity {
                 DBHelper.fmt(p.amount) +
 
                 "\nCollection: ₹" +
-                DBHelper.fmt(
-                        db.collection(p.id)
-                ) +
-
-                "\nPending: ₹" +
-                DBHelper.fmt(
-                        db.pending(p.id)
-                ) +
-
-                "\nExpenses: ₹" +
-                DBHelper.fmt(
-                        db.expenses(p.id)
-                ) +
-
-                "\nSite Profit: ₹" +
-                DBHelper.fmt(
-                        db.profit(p.id)
-                ) +
-
-                "\nDate: " +
-                p.date +
-
-                "\nStatus: " +
-                p.status +
-
-                "\nWork: " +
-                p.work;
-    }
-
-    void projectDialog(Project old) {
-
-        ArrayList<Company> cs =
-                db.companies();
-
-        if (cs.isEmpty()) {
-
-            Toast.makeText(
-                    this,
-                    "Add company first",
-                    Toast.LENGTH_LONG
-            ).show();
-
-            return;
-        }
-
-        LinearLayout l = vertical();
-
-        Spinner sp = new Spinner(this);
-
-        ArrayList<String> names =
-                new ArrayList<>();
-
-        for (Company c : cs) {
-            names.add(c.name);
-        }
-
-        sp.setAdapter(
-                new ArrayAdapter<String>(
-                        this,
-                        android.R.layout.simple_spinner_dropdown_item,
-                        names
-                )
-        );
-
-        if (old != null) {
-
-            for (int i = 0; i < cs.size(); i++) {
-
-                if (cs.get(i).id == old.companyId) {
-
-                    sp.setSelection(i);
-                }
-            }
-        }
-
-        EditText cu =
-                field(
-                        "Customer Name",
-                        old == null
-                                ? ""
-                                : old.customer
-                );
-
-        EditText ph =
-                field(
-                        "Customer Phone",
-                        old == null
-                                ? ""
-                                : old.phone
-                );
-
-        EditText site =
-                field(
-                        "Site Address",
-                        old == null
-                                ? ""
-                                : old.site
-                );
-
-        EditText kw =
-                field(
-                        "Solar kW",
-                        old == null
-                                ? ""
-                                : "" + old.kw
-                );
-
-        EditText amt =
-                field(
-                        "Project Amount",
-                        old == null
-                                ? ""
-                                : "" + old.amount
-                );
-
-        EditText date =
-                field(
-                        "Installation Date",
-                        old == null
-                                ? today()
-                                : old.date
-                );
-
-        EditText work =
-                field(
-                        "Site Work Detail",
-                        old == null
-                                ? ""
-                                : old.work
-                );
-
-        kw.setInputType(2);
-        amt.setInputType(2);
-
-        RadioGroup rg =
-                new RadioGroup(this);
-
-        RadioButton a =
-                new RadioButton(this);
-
-        a.setText("Pending");
-
-        RadioButton b =
-                new RadioButton(this);
-
-        b.setText("Work Going On");
-
-        rg.addView(a);
-        rg.addView(b);
-
-        if (
-                old != null &&
-                "Work Going On".equals(old.status)
-        ) {
-
-            b.setChecked(true);
-
-        } else {
-
-            a.setChecked(true);
-        }
-
-        l.addView(sp);
-        l.addView(cu);
-        l.addView(ph);
-        l.addView(site);
-        l.addView(kw);
-        l.addView(amt);
-        l.addView(date);
-        l.addView(rg);
-        l.addView(work);
-
-        Button dateBtn =
-                new Button(this);
-
-        dateBtn.setText(
-                "📅 Choose Installation Date"
-        );
-
-        dateBtn.setOnClickListener(
-                v -> datePicker(date)
-        );
-
-        l.addView(dateBtn);
-
-        AlertDialog d =
-                new AlertDialog.Builder(this)
-
-                        .setTitle(
-                                old == null
-                                        ? "New Project"
-                                        : "Edit Project"
-                        )
-
-                        .setView(l)
-
-                        .setNegativeButton(
-                                "Cancel",
-                                null
-                        )
-
-                        .setPositiveButton(
-                                "Save",
-                                null
-                        )
-
-                        .create();
-
-        d.setOnShowListener(x ->
-                d.getButton(-1).setOnClickListener(v -> {
-
-                    Company c =
-                            cs.get(
-                                    sp.getSelectedItemPosition()
-                            );
-
-                    double k = num(kw);
-
-                    double money = num(amt);
-
-                    if (
-                            cu.getText()
-                                    .toString()
-                                    .trim()
-                                    .isEmpty()
-                    ) {
-
-                        cu.setError("Required");
-                        return;
-                    }
-
-                    String status =
-                            b.isChecked()
-                                    ? "Work Going On"
-                                    : "Pending";
-
-                    if (old == null) {
-
-                        db.addProject(
-                                c.id,
-                                c.name,
-                                cu.getText().toString(),
-                                ph.getText().toString(),
-                                site.getText().toString(),
-                                k,
-                                money,
-                                date.getText().toString(),
-                                status,
-                                work.getText().toString()
-                        );
-
-                    } else {
-
-                        db.updateProject(
-                                old,
-                                c.id,
-                                c.name,
-                                cu.getText().toString(),
-                                ph.getText().toString(),
-                               
+                DB
