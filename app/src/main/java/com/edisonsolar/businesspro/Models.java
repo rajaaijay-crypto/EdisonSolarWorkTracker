@@ -59,3 +59,60 @@ class Project {
         hasLoc = false;
     }
 }
+
+class Worker {
+
+    int id;
+    String name;
+    String phone;
+
+    double dailySalary;
+    double monthlySalary;
+
+    Worker() {
+        id = 0;
+        name = "";
+        phone = "";
+        dailySalary = 0;
+        monthlySalary = 0;
+    }
+}
+
+class Attendance {
+
+    int id;
+    int workerId;
+
+    String date;
+    String status;
+    String site;
+    String note;
+
+    Attendance() {
+        id = 0;
+        workerId = 0;
+        date = "";
+        status = "";
+        site = "";
+        note = "";
+    }
+}
+
+class Advance {
+
+    int id;
+    int workerId;
+
+    double amount;
+
+    String date;
+    String note;
+
+    Advance() {
+        id = 0;
+        workerId = 0;
+        amount = 0;
+        date = "";
+        note = "";
+    }
+}
