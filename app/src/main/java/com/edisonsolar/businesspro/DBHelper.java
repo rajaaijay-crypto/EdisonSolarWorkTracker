@@ -1,4 +1,3 @@
-
 package com.edisonsolar.businesspro;
 
 import android.content.ContentValues;
@@ -12,12 +11,18 @@ import java.util.Locale;
 
 public class DBHelper extends SQLiteOpenHelper {
 
-    private static final String DB_NAME = "edison_solar_manager.db";
+    private static final String DB_NAME =
+            "edison_solar_manager.db";
+
     private static final int DB_VERSION = 1;
 
     public DBHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
+
+    // =========================================================
+    // DATABASE
+    // =========================================================
 
     @Override
     public void onCreate(SQLiteDatabase db) {
@@ -82,29 +87,44 @@ public class DBHelper extends SQLiteOpenHelper {
             int oldVersion,
             int newVersion
     ) {
-        db.execSQL("DROP TABLE IF EXISTS photos");
-        db.execSQL("DROP TABLE IF EXISTS expenses");
-        db.execSQL("DROP TABLE IF EXISTS payments");
-        db.execSQL("DROP TABLE IF EXISTS projects");
-        db.execSQL("DROP TABLE IF EXISTS companies");
+
+        db.execSQL(
+                "DROP TABLE IF EXISTS photos"
+        );
+
+        db.execSQL(
+                "DROP TABLE IF EXISTS expenses"
+        );
+
+        db.execSQL(
+                "DROP TABLE IF EXISTS payments"
+        );
+
+        db.execSQL(
+                "DROP TABLE IF EXISTS projects"
+        );
+
+        db.execSQL(
+                "DROP TABLE IF EXISTS companies"
+        );
 
         onCreate(db);
     }
 
-    // ---------------------------------------------------------
+    // =========================================================
     // COMPANY
-    // ---------------------------------------------------------
+    // =========================================================
 
     public ArrayList<Company> companies() {
 
         ArrayList<Company> list =
                 new ArrayList<>();
 
-        SQLiteDatabase db = getReadableDatabase();
-
         Cursor c =
-                db.rawQuery(
-                        "SELECT id,name,phone FROM companies ORDER BY name",
+                getReadableDatabase().rawQuery(
+                        "SELECT id,name,phone " +
+                                "FROM companies " +
+                                "ORDER BY name",
                         null
                 );
 
@@ -113,8 +133,8 @@ public class DBHelper extends SQLiteOpenHelper {
             Company x = new Company();
 
             x.id = c.getInt(0);
-            x.name = c.getString(1);
-            x.phone = c.getString(2);
+            x.name = safe(c.getString(1));
+            x.phone = safe(c.getString(2));
 
             list.add(x);
         }
@@ -135,12 +155,11 @@ public class DBHelper extends SQLiteOpenHelper {
         v.put("name", name);
         v.put("phone", phone);
 
-        getWritableDatabase()
-                .insert(
-                        "companies",
-                        null,
-                        v
-                );
+        getWritableDatabase().insert(
+                "companies",
+                null,
+                v
+        );
     }
 
     public void updateCompany(
@@ -155,44 +174,41 @@ public class DBHelper extends SQLiteOpenHelper {
         v.put("name", name);
         v.put("phone", phone);
 
-        getWritableDatabase()
-                .update(
-                        "companies",
-                        v,
-                        "id=?",
-                        new String[]{
-                                String.valueOf(id)
-                        }
-                );
+        getWritableDatabase().update(
+                "companies",
+                v,
+                "id=?",
+                new String[]{
+                        String.valueOf(id)
+                }
+        );
     }
 
     public void deleteCompany(int id) {
 
-        SQLiteDatabase db =
-                getWritableDatabase();
+        ArrayList<Integer> ids =
+                new ArrayList<>();
 
         Cursor c =
-                db.rawQuery(
-                        "SELECT id FROM projects WHERE company_id=?",
+                getReadableDatabase().rawQuery(
+                        "SELECT id FROM projects " +
+                                "WHERE company_id=?",
                         new String[]{
                                 String.valueOf(id)
                         }
                 );
 
-        ArrayList<Integer> projectIds =
-                new ArrayList<>();
-
         while (c.moveToNext()) {
-            projectIds.add(c.getInt(0));
+            ids.add(c.getInt(0));
         }
 
         c.close();
 
-        for (Integer projectId : projectIds) {
+        for (Integer projectId : ids) {
             deleteProject(projectId);
         }
 
-        db.delete(
+        getWritableDatabase().delete(
                 "companies",
                 "id=?",
                 new String[]{
@@ -204,13 +220,14 @@ public class DBHelper extends SQLiteOpenHelper {
     public int countProjects(int companyId) {
 
         Cursor c =
-                getReadableDatabase()
-                        .rawQuery(
-                                "SELECT COUNT(*) FROM projects WHERE company_id=?",
-                                new String[]{
-                                        String.valueOf(companyId)
-                                }
-                        );
+                getReadableDatabase().rawQuery(
+                        "SELECT COUNT(*) " +
+                                "FROM projects " +
+                                "WHERE company_id=?",
+                        new String[]{
+                                String.valueOf(companyId)
+                        }
+                );
 
         int result = 0;
 
@@ -226,7 +243,9 @@ public class DBHelper extends SQLiteOpenHelper {
     public double companyKw(int companyId) {
 
         return queryDouble(
-                "SELECT COALESCE(SUM(kw),0) FROM projects WHERE company_id=?",
+                "SELECT COALESCE(SUM(kw),0) " +
+                        "FROM projects " +
+                        "WHERE company_id=?",
                 companyId
         );
     }
@@ -234,7 +253,9 @@ public class DBHelper extends SQLiteOpenHelper {
     public double companyValue(int companyId) {
 
         return queryDouble(
-                "SELECT COALESCE(SUM(amount),0) FROM projects WHERE company_id=?",
+                "SELECT COALESCE(SUM(amount),0) " +
+                        "FROM projects " +
+                        "WHERE company_id=?",
                 companyId
         );
     }
@@ -263,9 +284,9 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    // ---------------------------------------------------------
-    // PROJECT
-    // ---------------------------------------------------------
+    // =========================================================
+    // PROJECTS
+    // =========================================================
 
     public ArrayList<Project> projects() {
 
@@ -273,15 +294,15 @@ public class DBHelper extends SQLiteOpenHelper {
                 new ArrayList<>();
 
         Cursor c =
-                getReadableDatabase()
-                        .rawQuery(
-                                "SELECT " +
-                                        "id,company_id,number,company,customer," +
-                                        "phone,site,kw,amount,date,status,work," +
-                                        "lat,lon,has_location " +
-                                        "FROM projects ORDER BY id DESC",
-                                null
-                        );
+                getReadableDatabase().rawQuery(
+                        "SELECT " +
+                                "id,company_id,number,company," +
+                                "customer,phone,site,kw,amount," +
+                                "date,status,work,lat,lon,has_location " +
+                                "FROM projects " +
+                                "ORDER BY id DESC",
+                        null
+                );
 
         while (c.moveToNext()) {
 
@@ -296,17 +317,17 @@ public class DBHelper extends SQLiteOpenHelper {
     public Project project(int id) {
 
         Cursor c =
-                getReadableDatabase()
-                        .rawQuery(
-                                "SELECT " +
-                                        "id,company_id,number,company,customer," +
-                                        "phone,site,kw,amount,date,status,work," +
-                                        "lat,lon,has_location " +
-                                        "FROM projects WHERE id=?",
-                                new String[]{
-                                        String.valueOf(id)
-                                }
-                        );
+                getReadableDatabase().rawQuery(
+                        "SELECT " +
+                                "id,company_id,number,company," +
+                                "customer,phone,site,kw,amount," +
+                                "date,status,work,lat,lon,has_location " +
+                                "FROM projects " +
+                                "WHERE id=?",
+                        new String[]{
+                                String.valueOf(id)
+                        }
+                );
 
         Project p = null;
 
@@ -373,12 +394,11 @@ public class DBHelper extends SQLiteOpenHelper {
         v.put("status", status);
         v.put("work", work);
 
-        getWritableDatabase()
-                .insert(
-                        "projects",
-                        null,
-                        v
-                );
+        getWritableDatabase().insert(
+                "projects",
+                null,
+                v
+        );
     }
 
     public void updateProject(
@@ -409,24 +429,345 @@ public class DBHelper extends SQLiteOpenHelper {
         v.put("status", status);
         v.put("work", work);
 
-        getWritableDatabase()
-                .update(
-                        "projects",
-                        v,
-                        "id=?",
-                        new String[]{
-                                String.valueOf(old.id)
-                        }
-                );
+        getWritableDatabase().update(
+                "projects",
+                v,
+                "id=?",
+                new String[]{
+                        String.valueOf(old.id)
+                }
+        );
     }
 
     private String nextProjectNumber() {
 
         Cursor c =
-                getReadableDatabase()
-                        .rawQuery(
-                                "SELECT COUNT(*) FROM projects",
-                                null
-                        );
+                getReadableDatabase().rawQuery(
+                        "SELECT COUNT(*) FROM projects",
+                        null
+                );
 
-       
+        int count = 0;
+
+        if (c.moveToFirst()) {
+            count = c.getInt(0);
+        }
+
+        c.close();
+
+        return String.format(
+                Locale.getDefault(),
+                "ESP-%04d",
+                count + 1
+        );
+    }
+
+    public void deleteProject(int projectId) {
+
+        SQLiteDatabase db =
+                getWritableDatabase();
+
+        db.delete(
+                "photos",
+                "project_id=?",
+                new String[]{
+                        String.valueOf(projectId)
+                }
+        );
+
+        db.delete(
+                "expenses",
+                "project_id=?",
+                new String[]{
+                        String.valueOf(projectId)
+                }
+        );
+
+        db.delete(
+                "payments",
+                "project_id=?",
+                new String[]{
+                        String.valueOf(projectId)
+                }
+        );
+
+        db.delete(
+                "projects",
+                "id=?",
+                new String[]{
+                        String.valueOf(projectId)
+                }
+        );
+    }
+
+    // =========================================================
+    // PAYMENTS
+    // =========================================================
+
+    public void addPayment(
+            int projectId,
+            double amount,
+            String date,
+            String note
+    ) {
+
+        ContentValues v =
+                new ContentValues();
+
+        v.put("project_id", projectId);
+        v.put("amount", amount);
+        v.put("date", date);
+        v.put("mode", "Payment");
+        v.put("note", note);
+
+        getWritableDatabase().insert(
+                "payments",
+                null,
+                v
+        );
+    }
+
+    public double collection(int projectId) {
+
+        return queryDouble(
+                "SELECT COALESCE(SUM(amount),0) " +
+                        "FROM payments " +
+                        "WHERE project_id=?",
+                projectId
+        );
+    }
+
+    public double pending(int projectId) {
+
+        Project p = project(projectId);
+
+        if (p == null) {
+            return 0;
+        }
+
+        double result =
+                p.amount -
+                        collection(projectId);
+
+        return Math.max(0, result);
+    }
+
+    // =========================================================
+    // EXPENSES
+    // =========================================================
+
+    public void addExpense(
+            int projectId,
+            double amount,
+            String category,
+            String date,
+            String note
+    ) {
+
+        ContentValues v =
+                new ContentValues();
+
+        v.put("project_id", projectId);
+        v.put("category", category);
+        v.put("amount", amount);
+        v.put("date", date);
+        v.put("note", note);
+
+        getWritableDatabase().insert(
+                "expenses",
+                null,
+                v
+        );
+    }
+
+    public double expenses(int projectId) {
+
+        return queryDouble(
+                "SELECT COALESCE(SUM(amount),0) " +
+                        "FROM expenses " +
+                        "WHERE project_id=?",
+                projectId
+        );
+    }
+
+    public double profit(int projectId) {
+
+        Project p = project(projectId);
+
+        if (p == null) {
+            return 0;
+        }
+
+        return p.amount -
+                expenses(projectId);
+    }
+
+    // =========================================================
+    // PHOTOS
+    // =========================================================
+
+    public void addPhoto(
+            int projectId,
+            String uri
+    ) {
+
+        ContentValues v =
+                new ContentValues();
+
+        v.put("project_id", projectId);
+        v.put("uri", uri);
+
+        getWritableDatabase().insert(
+                "photos",
+                null,
+                v
+        );
+    }
+
+    public ArrayList<String> photos(int projectId) {
+
+        ArrayList<String> list =
+                new ArrayList<>();
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        "SELECT uri FROM photos " +
+                                "WHERE project_id=? " +
+                                "ORDER BY id DESC",
+                        new String[]{
+                                String.valueOf(projectId)
+                        }
+                );
+
+        while (c.moveToNext()) {
+            list.add(
+                    safe(c.getString(0))
+            );
+        }
+
+        c.close();
+
+        return list;
+    }
+
+    // =========================================================
+    // DASHBOARD
+    // =========================================================
+
+    public String dashboard() {
+
+        double totalKw = 0;
+        double totalValue = 0;
+        double totalCollection = 0;
+        double totalExpenses = 0;
+
+        int projectCount = 0;
+
+        ArrayList<Project> list =
+                projects();
+
+        projectCount = list.size();
+
+        for (Project p : list) {
+
+            totalKw += p.kw;
+            totalValue += p.amount;
+            totalCollection +=
+                    collection(p.id);
+            totalExpenses +=
+                    expenses(p.id);
+        }
+
+        double pending =
+                Math.max(
+                        0,
+                        totalValue -
+                                totalCollection
+                );
+
+        double profit =
+                totalValue -
+                        totalExpenses;
+
+        return
+                "📊 EDISON SOLAR DASHBOARD\n\n" +
+
+                "Projects: " +
+                projectCount +
+
+                "\nTotal Solar: " +
+                fmt(totalKw) +
+                " kW" +
+
+                "\nProject Value: ₹" +
+                fmt(totalValue) +
+
+                "\nCollection: ₹" +
+                fmt(totalCollection) +
+
+                "\nPending: ₹" +
+                fmt(pending) +
+
+                "\nExpenses: ₹" +
+                fmt(totalExpenses) +
+
+                "\nSite Profit: ₹" +
+                fmt(profit);
+    }
+
+    // =========================================================
+    // UTILITY
+    // =========================================================
+
+    private double queryDouble(
+            String sql,
+            int id
+    ) {
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        sql,
+                        new String[]{
+                                String.valueOf(id)
+                        }
+                );
+
+        double value = 0;
+
+        if (c.moveToFirst()) {
+            value = c.getDouble(0);
+        }
+
+        c.close();
+
+        return value;
+    }
+
+    private String safe(String s) {
+
+        return s == null ? "" : s;
+    }
+
+    public static String fmt(double value) {
+
+        if (
+                Math.abs(
+                        value -
+                                Math.round(value)
+                ) < 0.00001
+        ) {
+
+            return String.format(
+                    Locale.getDefault(),
+                    "%.0f",
+                    value
+            );
+        }
+
+        return String.format(
+                Locale.getDefault(),
+                "%.2f",
+                value
+        );
+    }
+}
