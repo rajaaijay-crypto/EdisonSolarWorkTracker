@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.edisonsolar.businesspro"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.edisonsolar.businesspro"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
     }
@@ -26,11 +26,7 @@ android {
 }
 
 dependencies {
-
     implementation("androidx.appcompat:appcompat:1.7.0")
-
     implementation("androidx.core:core:1.17.0")
-
     implementation("com.google.android.material:material:1.12.0")
-
 }
