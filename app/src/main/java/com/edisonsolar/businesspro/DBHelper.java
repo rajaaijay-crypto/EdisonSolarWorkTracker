@@ -14,14 +14,14 @@ public class DBHelper extends SQLiteOpenHelper {
     private static final String DB_NAME =
             "edison_solar_manager.db";
 
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public DBHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
 
     // =========================================================
-    // DATABASE
+    // DATABASE CREATE
     // =========================================================
 
     @Override
@@ -81,6 +81,10 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
+    // =========================================================
+    // DATABASE UPGRADE
+    // =========================================================
+
     @Override
     public void onUpgrade(
             SQLiteDatabase db,
@@ -130,13 +134,19 @@ public class DBHelper extends SQLiteOpenHelper {
 
         while (c.moveToNext()) {
 
-            Company x = new Company();
+            Company company =
+                    new Company();
 
-            x.id = c.getInt(0);
-            x.name = safe(c.getString(1));
-            x.phone = safe(c.getString(2));
+            company.id =
+                    c.getInt(0);
 
-            list.add(x);
+            company.name =
+                    safe(c.getString(1));
+
+            company.phone =
+                    safe(c.getString(2));
+
+            list.add(company);
         }
 
         c.close();
@@ -149,16 +159,16 @@ public class DBHelper extends SQLiteOpenHelper {
             String phone
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("name", name);
-        v.put("phone", phone);
+        values.put("name", name);
+        values.put("phone", phone);
 
         getWritableDatabase().insert(
                 "companies",
                 null,
-                v
+                values
         );
     }
 
@@ -168,15 +178,15 @@ public class DBHelper extends SQLiteOpenHelper {
             String phone
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("name", name);
-        v.put("phone", phone);
+        values.put("name", name);
+        values.put("phone", phone);
 
         getWritableDatabase().update(
                 "companies",
-                v,
+                values,
                 "id=?",
                 new String[]{
                         String.valueOf(id)
@@ -186,7 +196,7 @@ public class DBHelper extends SQLiteOpenHelper {
 
     public void deleteCompany(int id) {
 
-        ArrayList<Integer> ids =
+        ArrayList<Integer> projectIds =
                 new ArrayList<>();
 
         Cursor c =
@@ -199,12 +209,17 @@ public class DBHelper extends SQLiteOpenHelper {
                 );
 
         while (c.moveToNext()) {
-            ids.add(c.getInt(0));
+
+            projectIds.add(
+                    c.getInt(0)
+            );
         }
 
         c.close();
 
-        for (Integer projectId : ids) {
+        for (Integer projectId :
+                projectIds) {
+
             deleteProject(projectId);
         }
 
@@ -217,7 +232,9 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public int countProjects(int companyId) {
+    public int countProjects(
+            int companyId
+    ) {
 
         Cursor c =
                 getReadableDatabase().rawQuery(
@@ -240,7 +257,9 @@ public class DBHelper extends SQLiteOpenHelper {
         return result;
     }
 
-    public double companyKw(int companyId) {
+    public double companyKw(
+            int companyId
+    ) {
 
         return queryDouble(
                 "SELECT COALESCE(SUM(kw),0) " +
@@ -250,7 +269,9 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public double companyValue(int companyId) {
+    public double companyValue(
+            int companyId
+    ) {
 
         return queryDouble(
                 "SELECT COALESCE(SUM(amount),0) " +
@@ -260,7 +281,9 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public double companyCollection(int companyId) {
+    public double companyCollection(
+            int companyId
+    ) {
 
         return queryDouble(
                 "SELECT COALESCE(SUM(payments.amount),0) " +
@@ -272,7 +295,9 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public double companyExpenses(int companyId) {
+    public double companyExpenses(
+            int companyId
+    ) {
 
         return queryDouble(
                 "SELECT COALESCE(SUM(expenses.amount),0) " +
@@ -306,7 +331,9 @@ public class DBHelper extends SQLiteOpenHelper {
 
         while (c.moveToNext()) {
 
-            list.add(readProject(c));
+            list.add(
+                    readProject(c)
+            );
         }
 
         c.close();
@@ -329,36 +356,70 @@ public class DBHelper extends SQLiteOpenHelper {
                         }
                 );
 
-        Project p = null;
+        Project project = null;
 
         if (c.moveToFirst()) {
-            p = readProject(c);
+
+            project =
+                    readProject(c);
         }
 
         c.close();
 
-        return p;
+        return project;
     }
 
-    private Project readProject(Cursor c) {
+    private Project readProject(
+            Cursor c
+    ) {
 
-        Project p = new Project();
+        Project p =
+                new Project();
 
-        p.id = c.getInt(0);
-        p.companyId = c.getInt(1);
-        p.number = safe(c.getString(2));
-        p.company = safe(c.getString(3));
-        p.customer = safe(c.getString(4));
-        p.phone = safe(c.getString(5));
-        p.site = safe(c.getString(6));
-        p.kw = c.getDouble(7);
-        p.amount = c.getDouble(8);
-        p.date = safe(c.getString(9));
-        p.status = safe(c.getString(10));
-        p.work = safe(c.getString(11));
-        p.lat = c.getDouble(12);
-        p.lon = c.getDouble(13);
-        p.hasLoc = c.getInt(14) == 1;
+        p.id =
+                c.getInt(0);
+
+        p.companyId =
+                c.getInt(1);
+
+        p.number =
+                safe(c.getString(2));
+
+        p.company =
+                safe(c.getString(3));
+
+        p.customer =
+                safe(c.getString(4));
+
+        p.phone =
+                safe(c.getString(5));
+
+        p.site =
+                safe(c.getString(6));
+
+        p.kw =
+                c.getDouble(7);
+
+        p.amount =
+                c.getDouble(8);
+
+        p.date =
+                safe(c.getString(9));
+
+        p.status =
+                safe(c.getString(10));
+
+        p.work =
+                safe(c.getString(11));
+
+        p.lat =
+                c.getDouble(12);
+
+        p.lon =
+                c.getDouble(13);
+
+        p.hasLoc =
+                c.getInt(14) == 1;
 
         return p;
     }
@@ -376,28 +437,68 @@ public class DBHelper extends SQLiteOpenHelper {
             String work
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("company_id", companyId);
-        v.put(
+        values.put(
+                "company_id",
+                companyId
+        );
+
+        values.put(
                 "number",
                 nextProjectNumber()
         );
-        v.put("company", company);
-        v.put("customer", customer);
-        v.put("phone", phone);
-        v.put("site", site);
-        v.put("kw", kw);
-        v.put("amount", amount);
-        v.put("date", date);
-        v.put("status", status);
-        v.put("work", work);
+
+        values.put(
+                "company",
+                company
+        );
+
+        values.put(
+                "customer",
+                customer
+        );
+
+        values.put(
+                "phone",
+                phone
+        );
+
+        values.put(
+                "site",
+                site
+        );
+
+        values.put(
+                "kw",
+                kw
+        );
+
+        values.put(
+                "amount",
+                amount
+        );
+
+        values.put(
+                "date",
+                date
+        );
+
+        values.put(
+                "status",
+                status
+        );
+
+        values.put(
+                "work",
+                work
+        );
 
         getWritableDatabase().insert(
                 "projects",
                 null,
-                v
+                values
         );
     }
 
@@ -415,26 +516,67 @@ public class DBHelper extends SQLiteOpenHelper {
             String work
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("company_id", companyId);
-        v.put("company", company);
-        v.put("customer", customer);
-        v.put("phone", phone);
-        v.put("site", site);
-        v.put("kw", kw);
-        v.put("amount", amount);
-        v.put("date", date);
-        v.put("status", status);
-        v.put("work", work);
+        values.put(
+                "company_id",
+                companyId
+        );
+
+        values.put(
+                "company",
+                company
+        );
+
+        values.put(
+                "customer",
+                customer
+        );
+
+        values.put(
+                "phone",
+                phone
+        );
+
+        values.put(
+                "site",
+                site
+        );
+
+        values.put(
+                "kw",
+                kw
+        );
+
+        values.put(
+                "amount",
+                amount
+        );
+
+        values.put(
+                "date",
+                date
+        );
+
+        values.put(
+                "status",
+                status
+        );
+
+        values.put(
+                "work",
+                work
+        );
 
         getWritableDatabase().update(
                 "projects",
-                v,
+                values,
                 "id=?",
                 new String[]{
-                        String.valueOf(old.id)
+                        String.valueOf(
+                                old.id
+                        )
                 }
         );
     }
@@ -443,14 +585,17 @@ public class DBHelper extends SQLiteOpenHelper {
 
         Cursor c =
                 getReadableDatabase().rawQuery(
-                        "SELECT COUNT(*) FROM projects",
+                        "SELECT COUNT(*) " +
+                                "FROM projects",
                         null
                 );
 
         int count = 0;
 
         if (c.moveToFirst()) {
-            count = c.getInt(0);
+
+            count =
+                    c.getInt(0);
         }
 
         c.close();
@@ -462,12 +607,14 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public void deleteProject(int projectId) {
+    public void deleteProject(
+            int projectId
+    ) {
 
-        SQLiteDatabase db =
+        SQLiteDatabase database =
                 getWritableDatabase();
 
-        db.delete(
+        database.delete(
                 "photos",
                 "project_id=?",
                 new String[]{
@@ -475,7 +622,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 }
         );
 
-        db.delete(
+        database.delete(
                 "expenses",
                 "project_id=?",
                 new String[]{
@@ -483,7 +630,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 }
         );
 
-        db.delete(
+        database.delete(
                 "payments",
                 "project_id=?",
                 new String[]{
@@ -491,7 +638,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 }
         );
 
-        db.delete(
+        database.delete(
                 "projects",
                 "id=?",
                 new String[]{
@@ -511,23 +658,44 @@ public class DBHelper extends SQLiteOpenHelper {
             String note
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("project_id", projectId);
-        v.put("amount", amount);
-        v.put("date", date);
-        v.put("mode", "Payment");
-        v.put("note", note);
+        values.put(
+                "project_id",
+                projectId
+        );
+
+        values.put(
+                "amount",
+                amount
+        );
+
+        values.put(
+                "date",
+                date
+        );
+
+        values.put(
+                "mode",
+                "Payment"
+        );
+
+        values.put(
+                "note",
+                note
+        );
 
         getWritableDatabase().insert(
                 "payments",
                 null,
-                v
+                values
         );
     }
 
-    public double collection(int projectId) {
+    public double collection(
+            int projectId
+    ) {
 
         return queryDouble(
                 "SELECT COALESCE(SUM(amount),0) " +
@@ -537,19 +705,25 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public double pending(int projectId) {
+    public double pending(
+            int projectId
+    ) {
 
-        Project p = project(projectId);
+        Project p =
+                project(projectId);
 
         if (p == null) {
             return 0;
         }
 
-        double result =
+        double value =
                 p.amount -
                         collection(projectId);
 
-        return Math.max(0, result);
+        return Math.max(
+                0,
+                value
+        );
     }
 
     // =========================================================
@@ -564,23 +738,44 @@ public class DBHelper extends SQLiteOpenHelper {
             String note
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("project_id", projectId);
-        v.put("category", category);
-        v.put("amount", amount);
-        v.put("date", date);
-        v.put("note", note);
+        values.put(
+                "project_id",
+                projectId
+        );
+
+        values.put(
+                "category",
+                category
+        );
+
+        values.put(
+                "amount",
+                amount
+        );
+
+        values.put(
+                "date",
+                date
+        );
+
+        values.put(
+                "note",
+                note
+        );
 
         getWritableDatabase().insert(
                 "expenses",
                 null,
-                v
+                values
         );
     }
 
-    public double expenses(int projectId) {
+    public double expenses(
+            int projectId
+    ) {
 
         return queryDouble(
                 "SELECT COALESCE(SUM(amount),0) " +
@@ -590,9 +785,12 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public double profit(int projectId) {
+    public double profit(
+            int projectId
+    ) {
 
-        Project p = project(projectId);
+        Project p =
+                project(projectId);
 
         if (p == null) {
             return 0;
@@ -611,20 +809,29 @@ public class DBHelper extends SQLiteOpenHelper {
             String uri
     ) {
 
-        ContentValues v =
+        ContentValues values =
                 new ContentValues();
 
-        v.put("project_id", projectId);
-        v.put("uri", uri);
+        values.put(
+                "project_id",
+                projectId
+        );
+
+        values.put(
+                "uri",
+                uri
+        );
 
         getWritableDatabase().insert(
                 "photos",
                 null,
-                v
+                values
         );
     }
 
-    public ArrayList<String> photos(int projectId) {
+    public ArrayList<String> photos(
+            int projectId
+    ) {
 
         ArrayList<String> list =
                 new ArrayList<>();
@@ -640,6 +847,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 );
 
         while (c.moveToNext()) {
+
             list.add(
                     safe(c.getString(0))
             );
@@ -661,19 +869,19 @@ public class DBHelper extends SQLiteOpenHelper {
         double totalCollection = 0;
         double totalExpenses = 0;
 
-        int projectCount = 0;
-
         ArrayList<Project> list =
                 projects();
-
-        projectCount = list.size();
 
         for (Project p : list) {
 
             totalKw += p.kw;
-            totalValue += p.amount;
+
+            totalValue +=
+                    p.amount;
+
             totalCollection +=
                     collection(p.id);
+
             totalExpenses +=
                     expenses(p.id);
         }
@@ -693,7 +901,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 "📊 EDISON SOLAR DASHBOARD\n\n" +
 
                 "Projects: " +
-                projectCount +
+                list.size() +
 
                 "\nTotal Solar: " +
                 fmt(totalKw) +
@@ -735,7 +943,9 @@ public class DBHelper extends SQLiteOpenHelper {
         double value = 0;
 
         if (c.moveToFirst()) {
-            value = c.getDouble(0);
+
+            value =
+                    c.getDouble(0);
         }
 
         c.close();
@@ -743,12 +953,16 @@ public class DBHelper extends SQLiteOpenHelper {
         return value;
     }
 
-    private String safe(String s) {
+    private String safe(String value) {
 
-        return s == null ? "" : s;
+        return value == null
+                ? ""
+                : value;
     }
 
-    public static String fmt(double value) {
+    public static String fmt(
+            double value
+    ) {
 
         if (
                 Math.abs(
