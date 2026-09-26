@@ -61,6 +61,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
 
         getWindow().setStatusBarColor(Color.WHITE);
+        getWindow().setNavigationBarColor(Color.WHITE);
 
         try {
             db = new DBHelper(this);
@@ -70,10 +71,16 @@ public class MainActivity extends Activity {
         }
     }
 
+    // =========================================================
+    // CRASH
+    // =========================================================
+
     private void crash(String where, Throwable e) {
+
         TextView t = new TextView(this);
 
         StringBuilder s = new StringBuilder();
+
         s.append("EDISON SOLAR MANAGER PRO\n\n");
         s.append("ERROR AT: ").append(where).append("\n\n");
         s.append(e.toString()).append("\n\n");
@@ -92,99 +99,186 @@ public class MainActivity extends Activity {
         t.setText(s.toString());
         t.setTextSize(14);
         t.setTextColor(Color.RED);
-        t.setPadding(20, 20, 20, 20);
+        t.setPadding(24, 24, 24, 24);
 
         ScrollView sv = new ScrollView(this);
         sv.addView(t);
+
         setContentView(sv);
     }
 
-    private TextView text(String s, float size) {
+    // =========================================================
+    // UI HELPERS
+    // =========================================================
+
+    private TextView text(String value, float size) {
+
         TextView t = new TextView(this);
-        t.setText(s);
+
+        t.setText(value);
         t.setTextSize(size);
         t.setTextColor(DARK);
-        t.setPadding(16, 12, 16, 12);
+        t.setPadding(16, 10, 16, 10);
+
         return t;
     }
 
     private EditText field(String hint, String value) {
+
         EditText e = new EditText(this);
+
         e.setHint(hint);
         e.setText(value);
         e.setTextSize(15);
+        e.setSingleLine(false);
+        e.setPadding(14, 8, 14, 8);
+
         return e;
     }
 
     private LinearLayout box() {
+
         LinearLayout l = new LinearLayout(this);
+
         l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(18, 8, 18, 8);
+
         return l;
     }
 
-    private Button btn(String s, int color, View.OnClickListener listener) {
+    private Button btn(
+            String title,
+            int color,
+            View.OnClickListener listener) {
+
         Button b = new Button(this);
 
-        b.setText(s);
+        b.setText(title);
         b.setTextColor(Color.WHITE);
-        b.setTextSize(15);
+        b.setTextSize(16);
         b.setAllCaps(false);
+        b.setGravity(Gravity.CENTER);
+        b.setIncludeFontPadding(true);
+        b.setMinHeight(64);
+        b.setMinimumHeight(64);
+        b.setPadding(12, 4, 12, 4);
         b.setOnClickListener(listener);
 
-        android.graphics.drawable.GradientDrawable g =
+        android.graphics.drawable.GradientDrawable bg =
                 new android.graphics.drawable.GradientDrawable();
 
-        g.setColor(color);
-        g.setCornerRadius(18);
+        bg.setColor(color);
+        bg.setCornerRadius(22);
 
-        b.setBackground(g);
+        b.setBackground(bg);
 
         LinearLayout.LayoutParams p =
-                new LinearLayout.LayoutParams(-1, 56);
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        64
+                );
 
-        p.setMargins(0, 5, 0, 5);
+        p.setMargins(0, 7, 0, 7);
+
         b.setLayoutParams(p);
 
         return b;
     }
 
-    private TextView card(String s) {
-        TextView t = text(s, 15);
+    private TextView card(String value) {
+
+        TextView t = text(value, 15);
+
+        t.setTextColor(DARK);
         t.setBackgroundColor(Color.WHITE);
+        t.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout.LayoutParams p =
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                );
+
+        p.setMargins(0, 6, 0, 6);
+
+        t.setLayoutParams(p);
+
         return t;
     }
 
     private void page(String title) {
-        ScrollView sv = new ScrollView(this);
+
+        ScrollView scroll = new ScrollView(this);
+
+        scroll.setFillViewport(true);
 
         root = new LinearLayout(this);
+
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(14, 14, 14, 28);
+        root.setPadding(16, 18, 16, 32);
         root.setBackgroundColor(BG);
 
-        LinearLayout bar = new LinearLayout(this);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
+        // TOP SAFE SPACE
+        TextView topSpace = new TextView(this);
+        topSpace.setHeight(8);
+        root.addView(topSpace);
+
+        // HEADER
+        LinearLayout header = new LinearLayout(this);
+
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
 
         Button back = new Button(this);
+
         back.setText("‹");
-        back.setTextSize(28);
+        back.setTextSize(30);
+        back.setTextColor(DARK);
         back.setAllCaps(false);
+        back.setGravity(Gravity.CENTER);
+
+        back.setBackgroundColor(Color.TRANSPARENT);
+
         back.setOnClickListener(v -> home());
 
-        bar.addView(back, new LinearLayout.LayoutParams(55, 55));
+        header.addView(
+                back,
+                new LinearLayout.LayoutParams(56, 60)
+        );
 
-        TextView h = text(title, 21);
-        h.setTypeface(null, 1);
+        TextView titleView = new TextView(this);
 
-        bar.addView(h, new LinearLayout.LayoutParams(0, 55, 1));
-        root.addView(bar);
+        titleView.setText(title);
+        titleView.setTextSize(20);
+        titleView.setTextColor(DARK);
+        titleView.setTypeface(null, 1);
+        titleView.setGravity(Gravity.CENTER_VERTICAL);
+        titleView.setPadding(8, 0, 8, 0);
 
-        sv.addView(root);
-        setContentView(sv);
+        header.addView(
+                titleView,
+                new LinearLayout.LayoutParams(
+                        0,
+                        60,
+                        1
+                )
+        );
+
+        root.addView(header);
+
+        scroll.addView(root);
+
+        setContentView(scroll);
     }
 
     private void logo() {
+
+        LinearLayout logoBox = new LinearLayout(this);
+
+        logoBox.setOrientation(LinearLayout.VERTICAL);
+        logoBox.setGravity(Gravity.CENTER);
+        logoBox.setPadding(10, 8, 10, 12);
+
         ImageView image = new ImageView(this);
 
         int id = getResources().getIdentifier(
@@ -200,13 +294,19 @@ public class MainActivity extends Activity {
         image.setAdjustViewBounds(true);
         image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
 
-        root.addView(
+        logoBox.addView(
                 image,
-                new LinearLayout.LayoutParams(-1, 135)
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        135
+                )
         );
+
+        root.addView(logoBox);
     }
 
     private String today() {
+
         return new SimpleDateFormat(
                 "dd-MM-yyyy",
                 Locale.getDefault()
@@ -214,11 +314,17 @@ public class MainActivity extends Activity {
     }
 
     private double num(EditText e) {
+
         try {
+
             return Double.parseDouble(
-                    e.getText().toString().trim()
+                    e.getText()
+                            .toString()
+                            .trim()
             );
+
         } catch (Exception ex) {
+
             return 0;
         }
     }
@@ -228,45 +334,79 @@ public class MainActivity extends Activity {
     // =========================================================
 
     private void home() {
+
         try {
+
             page("EDISON SOLAR MANAGER PRO");
+
             logo();
 
-            root.addView(card(db.dashboard()));
+            TextView dashboard =
+                    card(db.dashboard());
+
+            dashboard.setTextSize(16);
+            dashboard.setPadding(18, 18, 18, 18);
+
+            root.addView(dashboard);
 
             root.addView(
-                    btn("🏢 Companies", BLUE, v -> companies())
-            );
-
-            root.addView(
-                    btn("☀️ Projects", BLUE, v -> projects())
-            );
-
-            root.addView(
-                    btn("💰 Payment Collection", GREEN, v -> payments())
-            );
-
-            root.addView(
-                    btn("🧾 Expenses", ORANGE, v -> expenses())
-            );
-
-            root.addView(
-                    btn("📅 Calendar", PURPLE, v -> calendar())
-            );
-
-            root.addView(
-                    btn("📊 Reports / PDF", PURPLE, v -> reports())
+                    btn(
+                            "🏢  Companies",
+                            BLUE,
+                            v -> companies()
+                    )
             );
 
             root.addView(
                     btn(
-                            "📱 WhatsApp Report",
+                            "☀️  Projects",
+                            BLUE,
+                            v -> projects()
+                    )
+            );
+
+            root.addView(
+                    btn(
+                            "💰  Payment Collection",
+                            GREEN,
+                            v -> payments()
+                    )
+            );
+
+            root.addView(
+                    btn(
+                            "🧾  Expenses",
+                            ORANGE,
+                            v -> expenses()
+                    )
+            );
+
+            root.addView(
+                    btn(
+                            "📅  Calendar",
+                            PURPLE,
+                            v -> calendar()
+                    )
+            );
+
+            root.addView(
+                    btn(
+                            "📊  Reports / PDF",
+                            PURPLE,
+                            v -> reports()
+                    )
+            );
+
+            root.addView(
+                    btn(
+                            "📱  WhatsApp Report",
                             GREEN,
                             v -> share(db.dashboard())
                     )
             );
 
         } catch (Throwable e) {
+
             crash("HOME", e);
         }
     }
@@ -276,11 +416,17 @@ public class MainActivity extends Activity {
     // =========================================================
 
     private void companies() {
+
         try {
+
             page("Companies");
 
             root.addView(
-                    btn("+ Add Company", BLUE, v -> companyDialog(null))
+                    btn(
+                            "+  Add Company",
+                            BLUE,
+                            v -> companyDialog(null)
+                    )
             );
 
             for (Company c : db.companies()) {
@@ -288,15 +434,22 @@ public class MainActivity extends Activity {
                 root.addView(
                         card(
                                 c.name +
-                                "\nPhone: " + c.phone +
+                                "\nPhone: " +
+                                c.phone +
                                 "\nProjects: " +
                                 db.countProjects(c.id) +
                                 " | kW: " +
-                                DBHelper.fmt(db.companyKw(c.id)) +
+                                DBHelper.fmt(
+                                        db.companyKw(c.id)
+                                ) +
                                 "\nCollection: ₹" +
-                                DBHelper.fmt(db.companyCollection(c.id)) +
+                                DBHelper.fmt(
+                                        db.companyCollection(c.id)
+                                ) +
                                 "\nExpenses: ₹" +
-                                DBHelper.fmt(db.companyExpenses(c.id)) +
+                                DBHelper.fmt(
+                                        db.companyExpenses(c.id)
+                                ) +
                                 "\nPending: ₹" +
                                 DBHelper.fmt(
                                         db.companyValue(c.id) -
@@ -310,7 +463,12 @@ public class MainActivity extends Activity {
                         )
                 );
 
-                LinearLayout row = new LinearLayout(this);
+                LinearLayout row =
+                        new LinearLayout(this);
+
+                row.setOrientation(
+                        LinearLayout.HORIZONTAL
+                );
 
                 row.addView(
                         btn(
@@ -318,7 +476,11 @@ public class MainActivity extends Activity {
                                 BLUE,
                                 v -> companyDialog(c)
                         ),
-                        new LinearLayout.LayoutParams(0, 54, 1)
+                        new LinearLayout.LayoutParams(
+                                0,
+                                60,
+                                1
+                        )
                 );
 
                 row.addView(
@@ -333,72 +495,99 @@ public class MainActivity extends Activity {
                                         }
                                 )
                         ),
-                        new LinearLayout.LayoutParams(0, 54, 1)
+                        new LinearLayout.LayoutParams(
+                                0,
+                                60,
+                                1
+                        )
                 );
 
                 root.addView(row);
             }
 
         } catch (Throwable e) {
+
             crash("COMPANIES", e);
         }
     }
 
     private void companyDialog(Company old) {
+
         LinearLayout layout = box();
 
-        EditText name = field(
-                "Company Name",
-                old == null ? "" : old.name
-        );
+        EditText name =
+                field(
+                        "Company Name",
+                        old == null ? "" : old.name
+                );
 
-        EditText phone = field(
-                "Phone",
-                old == null ? "" : old.phone
-        );
+        EditText phone =
+                field(
+                        "Phone",
+                        old == null ? "" : old.phone
+                );
 
         layout.addView(name);
         layout.addView(phone);
 
-        AlertDialog d = new AlertDialog.Builder(this)
-                .setTitle(
-                        old == null
-                                ? "Add Company"
-                                : "Edit Company"
-                )
-                .setView(layout)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", null)
-                .create();
+        AlertDialog d =
+                new AlertDialog.Builder(this)
+                        .setTitle(
+                                old == null
+                                        ? "Add Company"
+                                        : "Edit Company"
+                        )
+                        .setView(layout)
+                        .setNegativeButton(
+                                "Cancel",
+                                null
+                        )
+                        .setPositiveButton(
+                                "Save",
+                                null
+                        )
+                        .create();
 
         d.setOnShowListener(x ->
-                d.getButton(-1).setOnClickListener(v -> {
+                d.getButton(-1)
+                        .setOnClickListener(v -> {
 
-                    String n = name.getText()
-                            .toString()
-                            .trim();
+                            String n =
+                                    name.getText()
+                                            .toString()
+                                            .trim();
 
-                    if (n.isEmpty()) {
-                        name.setError("Required");
-                        return;
-                    }
+                            if (n.isEmpty()) {
 
-                    if (old == null) {
-                        db.addCompany(
-                                n,
-                                phone.getText().toString()
-                        );
-                    } else {
-                        db.updateCompany(
-                                old.id,
-                                n,
-                                phone.getText().toString()
-                        );
-                    }
+                                name.setError(
+                                        "Required"
+                                );
 
-                    d.dismiss();
-                    companies();
-                })
+                                return;
+                            }
+
+                            if (old == null) {
+
+                                db.addCompany(
+                                        n,
+                                        phone.getText()
+                                                .toString()
+                                );
+
+                            } else {
+
+                                db.updateCompany(
+                                        old.id,
+                                        n,
+                                        phone.getText()
+                                                .toString()
+                                );
+                            }
+
+                            d.dismiss();
+
+                            companies();
+                        })
         );
 
         d.show();
@@ -409,11 +598,17 @@ public class MainActivity extends Activity {
     // =========================================================
 
     private void projects() {
+
         try {
+
             page("Projects");
 
             root.addView(
-                    btn("+ Add Project", BLUE, v -> projectDialog(null))
+                    btn(
+                            "+  Add Project",
+                            BLUE,
+                            v -> projectDialog(null)
+                    )
             );
 
             for (Project p : db.projects()) {
@@ -435,13 +630,21 @@ public class MainActivity extends Activity {
                                 "\nAmount: ₹" +
                                 DBHelper.fmt(p.amount) +
                                 "\nCollection: ₹" +
-                                DBHelper.fmt(db.collection(p.id)) +
+                                DBHelper.fmt(
+                                        db.collection(p.id)
+                                ) +
                                 "\nPending: ₹" +
-                                DBHelper.fmt(db.pending(p.id)) +
+                                DBHelper.fmt(
+                                        db.pending(p.id)
+                                ) +
                                 "\nExpenses: ₹" +
-                                DBHelper.fmt(db.expenses(p.id)) +
+                                DBHelper.fmt(
+                                        db.expenses(p.id)
+                                ) +
                                 "\nProfit: ₹" +
-                                DBHelper.fmt(db.profit(p.id)) +
+                                DBHelper.fmt(
+                                        db.profit(p.id)
+                                ) +
                                 "\n" +
                                 p.date +
                                 " • " +
@@ -459,44 +662,61 @@ public class MainActivity extends Activity {
             }
 
         } catch (Throwable e) {
+
             crash("PROJECTS", e);
         }
     }
 
     private void projectDialog(Project old) {
 
-        ArrayList<Company> cs = db.companies();
+        ArrayList<Company> companies =
+                db.companies();
 
-        if (cs.isEmpty()) {
+        if (companies.isEmpty()) {
+
             Toast.makeText(
                     this,
                     "Add company first",
                     Toast.LENGTH_LONG
             ).show();
+
             return;
         }
 
         LinearLayout layout = box();
 
-        Spinner spinner = new Spinner(this);
+        Spinner spinner =
+                new Spinner(this);
 
-        ArrayList<String> names = new ArrayList<>();
+        ArrayList<String> names =
+                new ArrayList<>();
 
-        for (Company c : cs) {
+        for (Company c : companies) {
             names.add(c.name);
         }
 
         spinner.setAdapter(
                 new ArrayAdapter<String>(
                         this,
-                        android.R.layout.simple_spinner_dropdown_item,
+                        android.R.layout
+                                .simple_spinner_dropdown_item,
                         names
                 )
         );
 
         if (old != null) {
-            for (int i = 0; i < cs.size(); i++) {
-                if (cs.get(i).id == old.companyId) {
+
+            for (
+                    int i = 0;
+                    i < companies.size();
+                    i++
+            ) {
+
+                if (
+                        companies.get(i).id ==
+                        old.companyId
+                ) {
+
                     spinner.setSelection(i);
                     break;
                 }
@@ -506,64 +726,92 @@ public class MainActivity extends Activity {
         EditText customer =
                 field(
                         "Customer Name",
-                        old == null ? "" : old.customer
+                        old == null
+                                ? ""
+                                : old.customer
                 );
 
         EditText phone =
                 field(
                         "Customer Phone",
-                        old == null ? "" : old.phone
+                        old == null
+                                ? ""
+                                : old.phone
                 );
 
         EditText site =
                 field(
                         "Site Address",
-                        old == null ? "" : old.site
+                        old == null
+                                ? ""
+                                : old.site
                 );
 
         EditText kw =
                 field(
                         "Solar kW",
-                        old == null ? "" : String.valueOf(old.kw)
+                        old == null
+                                ? ""
+                                : String.valueOf(old.kw)
                 );
 
         EditText amount =
                 field(
                         "Project Amount",
-                        old == null ? "" : String.valueOf(old.amount)
+                        old == null
+                                ? ""
+                                : String.valueOf(old.amount)
                 );
 
         EditText date =
                 field(
                         "Installation Date",
-                        old == null ? today() : old.date
+                        old == null
+                                ? today()
+                                : old.date
                 );
 
         EditText work =
                 field(
                         "Site Work Detail",
-                        old == null ? "" : old.work
+                        old == null
+                                ? ""
+                                : old.work
                 );
 
-        RadioGroup group = new RadioGroup(this);
+        RadioGroup group =
+                new RadioGroup(this);
 
-        RadioButton pending = new RadioButton(this);
+        RadioButton pending =
+                new RadioButton(this);
+
         pending.setText("Pending");
 
-        RadioButton going = new RadioButton(this);
+        RadioButton going =
+                new RadioButton(this);
+
         going.setText("Work Going On");
 
         group.addView(pending);
         group.addView(going);
 
-        if (old != null &&
-                "Work Going On".equals(old.status)) {
+        if (
+                old != null &&
+                "Work Going On"
+                        .equals(old.status)
+        ) {
+
             going.setChecked(true);
+
         } else {
+
             pending.setChecked(true);
         }
 
-        layout.addView(text("Company", 14));
+        layout.addView(
+                text("Company", 14)
+        );
+
         layout.addView(spinner);
         layout.addView(customer);
         layout.addView(phone);
@@ -576,81 +824,106 @@ public class MainActivity extends Activity {
 
         layout.addView(
                 btn(
-                        "📅 Choose Installation Date",
+                        "📅  Choose Installation Date",
                         PURPLE,
                         v -> chooseDate(date)
                 )
         );
 
-        AlertDialog d = new AlertDialog.Builder(this)
-                .setTitle(
-                        old == null
-                                ? "New Project"
-                                : "Edit Project"
-                )
-                .setView(layout)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", null)
-                .create();
+        AlertDialog d =
+                new AlertDialog.Builder(this)
+                        .setTitle(
+                                old == null
+                                        ? "New Project"
+                                        : "Edit Project"
+                        )
+                        .setView(layout)
+                        .setNegativeButton(
+                                "Cancel",
+                                null
+                        )
+                        .setPositiveButton(
+                                "Save",
+                                null
+                        )
+                        .create();
 
         d.setOnShowListener(x ->
-                d.getButton(-1).setOnClickListener(v -> {
+                d.getButton(-1)
+                        .setOnClickListener(v -> {
 
-                    Company c =
-                            cs.get(
-                                    spinner.getSelectedItemPosition()
-                            );
+                            Company company =
+                                    companies.get(
+                                            spinner
+                                                    .getSelectedItemPosition()
+                                    );
 
-                    String cust =
-                            customer.getText()
-                                    .toString()
-                                    .trim();
+                            String customerName =
+                                    customer.getText()
+                                            .toString()
+                                            .trim();
 
-                    if (cust.isEmpty()) {
-                        customer.setError("Required");
-                        return;
-                    }
+                            if (
+                                    customerName
+                                            .isEmpty()
+                            ) {
 
-                    String status =
-                            going.isChecked()
-                                    ? "Work Going On"
-                                    : "Pending";
+                                customer.setError(
+                                        "Required"
+                                );
 
-                    if (old == null) {
+                                return;
+                            }
 
-                        db.addProject(
-                                c.id,
-                                c.name,
-                                cust,
-                                phone.getText().toString(),
-                                site.getText().toString(),
-                                num(kw),
-                                num(amount),
-                                date.getText().toString(),
-                                status,
-                                work.getText().toString()
-                        );
+                            String status =
+                                    going.isChecked()
+                                            ? "Work Going On"
+                                            : "Pending";
 
-                    } else {
+                            if (old == null) {
 
-                        db.updateProject(
-                                old,
-                                c.id,
-                                c.name,
-                                cust,
-                                phone.getText().toString(),
-                                site.getText().toString(),
-                                num(kw),
-                                num(amount),
-                                date.getText().toString(),
-                                status,
-                                work.getText().toString()
-                        );
-                    }
+                                db.addProject(
+                                        company.id,
+                                        company.name,
+                                        customerName,
+                                        phone.getText()
+                                                .toString(),
+                                        site.getText()
+                                                .toString(),
+                                        num(kw),
+                                        num(amount),
+                                        date.getText()
+                                                .toString(),
+                                        status,
+                                        work.getText()
+                                                .toString()
+                                );
 
-                    d.dismiss();
-                    projects();
-                })
+                            } else {
+
+                                db.updateProject(
+                                        old,
+                                        company.id,
+                                        company.name,
+                                        customerName,
+                                        phone.getText()
+                                                .toString(),
+                                        site.getText()
+                                                .toString(),
+                                        num(kw),
+                                        num(amount),
+                                        date.getText()
+                                                .toString(),
+                                        status,
+                                        work.getText()
+                                                .toString()
+                                );
+                            }
+
+                            d.dismiss();
+
+                            projects();
+                        })
         );
 
         d.show();
@@ -670,40 +943,61 @@ public class MainActivity extends Activity {
         };
 
         new AlertDialog.Builder(this)
-                .setTitle(p.number + " • " + p.customer)
-                .setItems(items, (d, w) -> {
+                .setTitle(
+                        p.number +
+                        " • " +
+                        p.customer
+                )
+                .setItems(
+                        items,
+                        (d, w) -> {
 
-                    if (w == 0) {
-                        projectDialog(p);
+                            if (w == 0) {
 
-                    } else if (w == 1) {
-                        projectPayments(p);
+                                projectDialog(p);
 
-                    } else if (w == 2) {
-                        projectExpenses(p);
+                            } else if (w == 1) {
 
-                    } else if (w == 3) {
-                        photos(p);
+                                projectPayments(p);
 
-                    } else if (w == 4) {
-                        gps(p);
+                            } else if (w == 2) {
 
-                    } else if (w == 5) {
-                        pdf(p);
+                                projectExpenses(p);
 
-                    } else if (w == 6) {
-                        share(projectReport(p));
+                            } else if (w == 3) {
 
-                    } else {
-                        confirm(
-                                "Delete this project and its records?",
-                                () -> {
-                                    db.deleteProject(p.id);
-                                    projects();
-                                }
-                        );
-                    }
-                })
+                                photos(p);
+
+                            } else if (w == 4) {
+
+                                gps(p);
+
+                            } else if (w == 5) {
+
+                                pdf(p);
+
+                            } else if (w == 6) {
+
+                                share(
+                                        projectReport(p)
+                                );
+
+                            } else {
+
+                                confirm(
+                                        "Delete this project and its records?",
+                                        () -> {
+
+                                            db.deleteProject(
+                                                    p.id
+                                            );
+
+                                            projects();
+                                        }
+                                );
+                            }
+                        }
+                )
                 .show();
     }
 
@@ -711,24 +1005,43 @@ public class MainActivity extends Activity {
 
         return
                 "EDISON SOLAR MANAGER PRO\n\n" +
-                "Project: " + p.number + "\n" +
-                "Company: " + p.company + "\n" +
-                "Customer: " + p.customer + "\n" +
-                "Phone: " + p.phone + "\n" +
-                "Site: " + p.site + "\n" +
-                "Solar: " + DBHelper.fmt(p.kw) + " kW\n" +
-                "Amount: ₹" + DBHelper.fmt(p.amount) + "\n" +
-                "Collection: ₹" +
-                DBHelper.fmt(db.collection(p.id)) + "\n" +
-                "Pending: ₹" +
-                DBHelper.fmt(db.pending(p.id)) + "\n" +
-                "Expenses: ₹" +
-                DBHelper.fmt(db.expenses(p.id)) + "\n" +
-                "Profit: ₹" +
-                DBHelper.fmt(db.profit(p.id)) + "\n" +
-                "Date: " + p.date + "\n" +
-                "Status: " + p.status + "\n" +
-                "Work: " + p.work;
+                "Project: " +
+                p.number + "\n" +
+                "Company: " +
+                p.company + "\n" +
+                "Customer: " +
+                p.customer + "\n" +
+                "Phone: " +
+                p.phone + "\n" +
+                "Site: " +
+                p.site + "\n" +
+                "Solar: " +
+                DBHelper.fmt(p.kw) +
+                " kW\n" +
+                "Amount: ₹" +
+                DBHelper.fmt(p.amount) +
+                "\nCollection: ₹" +
+                DBHelper.fmt(
+                        db.collection(p.id)
+                ) +
+                "\nPending: ₹" +
+                DBHelper.fmt(
+                        db.pending(p.id)
+                ) +
+                "\nExpenses: ₹" +
+                DBHelper.fmt(
+                        db.expenses(p.id)
+                ) +
+                "\nProfit: ₹" +
+                DBHelper.fmt(
+                        db.profit(p.id)
+                ) +
+                "\nDate: " +
+                p.date +
+                "\nStatus: " +
+                p.status +
+                "\nWork: " +
+                p.work;
     }
 
     // =========================================================
@@ -737,22 +1050,29 @@ public class MainActivity extends Activity {
 
     private void projectPayments(Project p) {
 
-        page("Payments • " + p.customer);
+        page(
+                "Payments • " +
+                p.customer
+        );
 
         root.addView(
                 card(
                         "Amount: ₹" +
                         DBHelper.fmt(p.amount) +
                         "\nCollection: ₹" +
-                        DBHelper.fmt(db.collection(p.id)) +
+                        DBHelper.fmt(
+                                db.collection(p.id)
+                        ) +
                         "\nPending: ₹" +
-                        DBHelper.fmt(db.pending(p.id))
+                        DBHelper.fmt(
+                                db.pending(p.id)
+                        )
                 )
         );
 
         root.addView(
                 btn(
-                        "+ Add Payment",
+                        "+  Add Payment",
                         GREEN,
                         v -> paymentDialog(p)
                 )
@@ -764,42 +1084,64 @@ public class MainActivity extends Activity {
         LinearLayout layout = box();
 
         EditText amount =
-                field("Payment Amount", "");
+                field(
+                        "Payment Amount",
+                        ""
+                );
 
         EditText note =
-                field("Payment Note", "");
+                field(
+                        "Payment Note",
+                        ""
+                );
 
         layout.addView(amount);
         layout.addView(note);
 
         AlertDialog d =
                 new AlertDialog.Builder(this)
-                        .setTitle("Add Payment")
+                        .setTitle(
+                                "Add Payment"
+                        )
                         .setView(layout)
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Save", null)
+                        .setNegativeButton(
+                                "Cancel",
+                                null
+                        )
+                        .setPositiveButton(
+                                "Save",
+                                null
+                        )
                         .create();
 
         d.setOnShowListener(x ->
-                d.getButton(-1).setOnClickListener(v -> {
+                d.getButton(-1)
+                        .setOnClickListener(v -> {
 
-                    double a = num(amount);
+                            double value =
+                                    num(amount);
 
-                    if (a <= 0) {
-                        amount.setError("Enter amount");
-                        return;
-                    }
+                            if (value <= 0) {
 
-                    db.addPayment(
-                            p.id,
-                            a,
-                            today(),
-                            note.getText().toString()
-                    );
+                                amount.setError(
+                                        "Enter amount"
+                                );
 
-                    d.dismiss();
-                    projectPayments(p);
-                })
+                                return;
+                            }
+
+                            db.addPayment(
+                                    p.id,
+                                    value,
+                                    today(),
+                                    note.getText()
+                                            .toString()
+                            );
+
+                            d.dismiss();
+
+                            projectPayments(p);
+                        })
         );
 
         d.show();
@@ -812,6 +1154,7 @@ public class MainActivity extends Activity {
         double total = 0;
 
         for (Project p : db.projects()) {
+
             total += db.collection(p.id);
         }
 
@@ -830,9 +1173,13 @@ public class MainActivity extends Activity {
                             " • " +
                             p.customer +
                             "\nCollected: ₹" +
-                            DBHelper.fmt(db.collection(p.id)) +
+                            DBHelper.fmt(
+                                    db.collection(p.id)
+                            ) +
                             "\nPending: ₹" +
-                            DBHelper.fmt(db.pending(p.id))
+                            DBHelper.fmt(
+                                    db.pending(p.id)
+                            )
                     )
             );
 
@@ -852,20 +1199,27 @@ public class MainActivity extends Activity {
 
     private void projectExpenses(Project p) {
 
-        page("Expenses • " + p.customer);
+        page(
+                "Expenses • " +
+                p.customer
+        );
 
         root.addView(
                 card(
                         "Expenses: ₹" +
-                        DBHelper.fmt(db.expenses(p.id)) +
+                        DBHelper.fmt(
+                                db.expenses(p.id)
+                        ) +
                         "\nProfit: ₹" +
-                        DBHelper.fmt(db.profit(p.id))
+                        DBHelper.fmt(
+                                db.profit(p.id)
+                        )
                 )
         );
 
         root.addView(
                 btn(
-                        "+ Add Expense",
+                        "+  Add Expense",
                         ORANGE,
                         v -> expenseDialog(p)
                 )
@@ -877,13 +1231,22 @@ public class MainActivity extends Activity {
         LinearLayout layout = box();
 
         EditText amount =
-                field("Expense Amount", "");
+                field(
+                        "Expense Amount",
+                        ""
+                );
 
         EditText type =
-                field("Expense Type", "Other");
+                field(
+                        "Expense Type",
+                        "Other"
+                );
 
         EditText note =
-                field("Expense Note", "");
+                field(
+                        "Expense Note",
+                        ""
+                );
 
         layout.addView(amount);
         layout.addView(type);
@@ -891,33 +1254,50 @@ public class MainActivity extends Activity {
 
         AlertDialog d =
                 new AlertDialog.Builder(this)
-                        .setTitle("Add Expense")
+                        .setTitle(
+                                "Add Expense"
+                        )
                         .setView(layout)
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Save", null)
+                        .setNegativeButton(
+                                "Cancel",
+                                null
+                        )
+                        .setPositiveButton(
+                                "Save",
+                                null
+                        )
                         .create();
 
         d.setOnShowListener(x ->
-                d.getButton(-1).setOnClickListener(v -> {
+                d.getButton(-1)
+                        .setOnClickListener(v -> {
 
-                    double a = num(amount);
+                            double value =
+                                    num(amount);
 
-                    if (a <= 0) {
-                        amount.setError("Enter amount");
-                        return;
-                    }
+                            if (value <= 0) {
 
-                    db.addExpense(
-                            p.id,
-                            a,
-                            type.getText().toString(),
-                            today(),
-                            note.getText().toString()
-                    );
+                                amount.setError(
+                                        "Enter amount"
+                                );
 
-                    d.dismiss();
-                    projectExpenses(p);
-                })
+                                return;
+                            }
+
+                            db.addExpense(
+                                    p.id,
+                                    value,
+                                    type.getText()
+                                            .toString(),
+                                    today(),
+                                    note.getText()
+                                            .toString()
+                            );
+
+                            d.dismiss();
+
+                            projectExpenses(p);
+                        })
         );
 
         d.show();
@@ -930,6 +1310,7 @@ public class MainActivity extends Activity {
         double total = 0;
 
         for (Project p : db.projects()) {
+
             total += db.expenses(p.id);
         }
 
@@ -948,9 +1329,13 @@ public class MainActivity extends Activity {
                             " • " +
                             p.customer +
                             "\nExpenses: ₹" +
-                            DBHelper.fmt(db.expenses(p.id)) +
+                            DBHelper.fmt(
+                                    db.expenses(p.id)
+                            ) +
                             "\nProfit: ₹" +
-                            DBHelper.fmt(db.profit(p.id))
+                            DBHelper.fmt(
+                                    db.profit(p.id)
+                            )
                     )
             );
         }
@@ -966,7 +1351,7 @@ public class MainActivity extends Activity {
 
         root.addView(
                 btn(
-                        "📅 Select Date",
+                        "📅  Select Date",
                         PURPLE,
                         v -> {
 
@@ -975,16 +1360,22 @@ public class MainActivity extends Activity {
 
                             new DatePickerDialog(
                                     this,
-                                    (view, year, month, day) ->
-                                            calendarDay(
-                                                    String.format(
-                                                            Locale.getDefault(),
-                                                            "%02d-%02d-%04d",
-                                                            day,
-                                                            month + 1,
-                                                            year
-                                                    )
-                                            ),
+                                    (view,
+                                     year,
+                                     month,
+                                     day) -> {
+
+                                        String date =
+                                                String.format(
+                                                        Locale.getDefault(),
+                                                        "%02d-%02d-%04d",
+                                                        day,
+                                                        month + 1,
+                                                        year
+                                                );
+
+                                        calendarDay(date);
+                                    },
                                     c.get(Calendar.YEAR),
                                     c.get(Calendar.MONTH),
                                     c.get(Calendar.DAY_OF_MONTH)
@@ -1002,7 +1393,10 @@ public class MainActivity extends Activity {
 
     private void calendarDay(String date) {
 
-        page("Work • " + date);
+        page(
+                "Work • " +
+                date
+        );
 
         boolean found = false;
 
@@ -1014,20 +1408,30 @@ public class MainActivity extends Activity {
 
                 root.addView(
                         card(
-                                "🏢 " + p.company +
-                                "\n👤 " + p.customer +
-                                "\n☀️ " + DBHelper.fmt(p.kw) + " kW" +
-                                "\n📍 " + p.site +
-                                "\nStatus: " + p.status +
-                                "\nWork: " + p.work
+                                "🏢 " +
+                                p.company +
+                                "\n👤 " +
+                                p.customer +
+                                "\n☀️ " +
+                                DBHelper.fmt(p.kw) +
+                                " kW" +
+                                "\n📍 " +
+                                p.site +
+                                "\nStatus: " +
+                                p.status +
+                                "\nWork: " +
+                                p.work
                         )
                 );
             }
         }
 
         if (!found) {
+
             root.addView(
-                    card("No project work on this date.")
+                    card(
+                            "No project work on this date."
+                    )
             );
         }
     }
@@ -1040,13 +1444,19 @@ public class MainActivity extends Activity {
 
         page("Reports / PDF");
 
-        root.addView(card(db.dashboard()));
+        root.addView(
+                card(
+                        db.dashboard()
+                )
+        );
 
         root.addView(
                 btn(
-                        "📱 Overall WhatsApp Report",
+                        "📱  Overall WhatsApp Report",
                         GREEN,
-                        v -> share(db.dashboard())
+                        v -> share(
+                                db.dashboard()
+                        )
                 )
         );
 
@@ -1054,7 +1464,8 @@ public class MainActivity extends Activity {
 
             root.addView(
                     btn(
-                            "PDF • " + p.number,
+                            "PDF • " +
+                            p.number,
                             PURPLE,
                             v -> pdf(p)
                     )
@@ -1084,7 +1495,7 @@ public class MainActivity extends Activity {
 
         root.addView(
                 btn(
-                        "📷 Take Site Photo",
+                        "📷  Take Site Photo",
                         BLUE,
                         v -> takePhoto()
                 )
@@ -1092,7 +1503,7 @@ public class MainActivity extends Activity {
 
         root.addView(
                 btn(
-                        "🖼️ Open Gallery",
+                        "🖼️  Open Gallery",
                         PURPLE,
                         v -> openGallery()
                 )
@@ -1105,7 +1516,8 @@ public class MainActivity extends Activity {
                 ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.CAMERA
-                ) != PackageManager.PERMISSION_GRANTED
+                )
+                != PackageManager.PERMISSION_GRANTED
         ) {
 
             ActivityCompat.requestPermissions(
@@ -1123,11 +1535,15 @@ public class MainActivity extends Activity {
 
             File dir =
                     getExternalFilesDir(
-                            Environment.DIRECTORY_PICTURES
+                            Environment
+                                    .DIRECTORY_PICTURES
                     );
 
             if (dir == null) return;
-            if (!dir.exists()) dir.mkdirs();
+
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
 
             File file =
                     new File(
@@ -1169,7 +1585,8 @@ public class MainActivity extends Activity {
 
             Toast.makeText(
                     this,
-                    "Camera Error: " + e.getMessage(),
+                    "Camera Error: " +
+                    e.getMessage(),
                     Toast.LENGTH_LONG
             ).show();
         }
@@ -1180,7 +1597,8 @@ public class MainActivity extends Activity {
         Intent intent =
                 new Intent(
                         Intent.ACTION_PICK,
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                        MediaStore.Images.Media
+                                .EXTERNAL_CONTENT_URI
                 );
 
         startActivityForResult(
@@ -1201,7 +1619,9 @@ public class MainActivity extends Activity {
                 data
         );
 
-        if (resultCode != RESULT_OK) return;
+        if (resultCode != RESULT_OK) {
+            return;
+        }
 
         if (
                 requestCode == 101 &&
@@ -1242,15 +1662,19 @@ public class MainActivity extends Activity {
         if (
                 ContextCompat.checkSelfPermission(
                         this,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                ) != PackageManager.PERMISSION_GRANTED
+                        Manifest.permission
+                                .ACCESS_FINE_LOCATION
+                )
+                != PackageManager.PERMISSION_GRANTED
         ) {
 
             ActivityCompat.requestPermissions(
                     this,
                     new String[]{
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
+                            Manifest.permission
+                                    .ACCESS_FINE_LOCATION,
+                            Manifest.permission
+                                    .ACCESS_COARSE_LOCATION
                     },
                     100
             );
@@ -1262,18 +1686,22 @@ public class MainActivity extends Activity {
 
             LocationManager lm =
                     (LocationManager)
-                            getSystemService(LOCATION_SERVICE);
+                            getSystemService(
+                                    LOCATION_SERVICE
+                            );
 
             Location loc =
                     lm.getLastKnownLocation(
-                            LocationManager.GPS_PROVIDER
+                            LocationManager
+                                    .GPS_PROVIDER
                     );
 
             if (loc == null) {
 
                 loc =
                         lm.getLastKnownLocation(
-                                LocationManager.NETWORK_PROVIDER
+                                LocationManager
+                                        .NETWORK_PROVIDER
                         );
             }
 
@@ -1328,14 +1756,15 @@ public class MainActivity extends Activity {
 
         try {
 
+            PdfDocument.PageInfo info =
+                    new PdfDocument.PageInfo.Builder(
+                            595,
+                            842,
+                            1
+                    ).create();
+
             PdfDocument.Page page =
-                    document.startPage(
-                            new PdfDocument.PageInfo.Builder(
-                                    595,
-                                    842,
-                                    1
-                            ).create()
-                    );
+                    document.startPage(info);
 
             Paint paint = new Paint();
 
@@ -1349,7 +1778,9 @@ public class MainActivity extends Activity {
                     projectReport(p).split("\n")
             ) {
 
-                if (y > 800) break;
+                if (y > 800) {
+                    break;
+                }
 
                 page.getCanvas().drawText(
                         line,
@@ -1366,17 +1797,21 @@ public class MainActivity extends Activity {
             File dir =
                     new File(
                             getExternalFilesDir(
-                                    Environment.DIRECTORY_DOCUMENTS
+                                    Environment
+                                            .DIRECTORY_DOCUMENTS
                             ),
                             "EDISON_SOLAR"
                     );
 
-            if (!dir.exists()) dir.mkdirs();
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
 
             File file =
                     new File(
                             dir,
-                            p.number + "_Report.pdf"
+                            p.number +
+                            "_Report.pdf"
                     );
 
             FileOutputStream output =
@@ -1398,7 +1833,9 @@ public class MainActivity extends Activity {
                             Intent.ACTION_SEND
                     );
 
-            share.setType("application/pdf");
+            share.setType(
+                    "application/pdf"
+            );
 
             share.putExtra(
                     Intent.EXTRA_STREAM,
@@ -1420,7 +1857,8 @@ public class MainActivity extends Activity {
 
             Toast.makeText(
                     this,
-                    "PDF Error: " + e.getMessage(),
+                    "PDF Error: " +
+                    e.getMessage(),
                     Toast.LENGTH_LONG
             ).show();
 
@@ -1431,12 +1869,13 @@ public class MainActivity extends Activity {
     }
 
     // =========================================================
-    // HELPERS
+    // DATE
     // =========================================================
 
     private void chooseDate(EditText target) {
 
-        Calendar c = Calendar.getInstance();
+        Calendar c =
+                Calendar.getInstance();
 
         new DatePickerDialog(
                 this,
@@ -1456,6 +1895,10 @@ public class MainActivity extends Activity {
         ).show();
     }
 
+    // =========================================================
+    // CONFIRM
+    // =========================================================
+
     private void confirm(
             String message,
             Runnable action) {
@@ -1473,12 +1916,20 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    // =========================================================
+    // SHARE
+    // =========================================================
+
     private void share(String message) {
 
         Intent intent =
-                new Intent(Intent.ACTION_SEND);
+                new Intent(
+                        Intent.ACTION_SEND
+                );
 
-        intent.setType("text/plain");
+        intent.setType(
+                "text/plain"
+        );
 
         intent.putExtra(
                 Intent.EXTRA_TEXT,
