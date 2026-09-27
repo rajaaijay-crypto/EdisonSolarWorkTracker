@@ -837,125 +837,843 @@ public class MainActivity extends Activity {
         ).append(fmt(p.kw))
                 .append(" kW\n");
 
-        s.append(
-                "Project Value: ₹"
-        ).append(fmt(p.amount))
-                .append("\n");
+// ---------------------------------------------------------
+// PAYMENTS / COLLECTION - UPDATED PREMIUM PAGE
+// ---------------------------------------------------------
 
-        s.append(
-                "Collection: ₹"
-        ).append(fmt(collection))
-                .append("\n");
+void payments() {
 
-        s.append(
-                "Pending: ₹"
-        ).append(fmt(pending))
-                .append("\n");
+    page("Payment Collection");
 
-        s.append(
-                "Expenses: ₹"
-        ).append(fmt(expense))
-                .append("\n");
+    root.addView(
+            card(
+                    "💰 PAYMENT COLLECTION\n" +
+                    "Company & Project wise collection"
+            )
+    );
 
-        s.append(
-                "Site Salary: ₹"
-        ).append(fmt(salary))
-                .append("\n");
+    ArrayList<Company> companies = db.companies();
+    ArrayList<Project> projects = db.projects();
 
-        s.append(
-                "Work Days: "
-        ).append(projectWorkDays(p))
-                .append("\n");
+    // COMPANY SELECT
+    root.addView(
+            txt("🏢 Select Company", 18, true)
+    );
 
-        s.append(
-                "Profit: ₹"
-        ).append(fmt(profit))
-                .append("\n");
+    Spinner companySpinner = new Spinner(this);
 
-        s.append(
-                "Date: "
-        ).append(p.date)
-                .append("\n");
+    ArrayList<String> companyNames = new ArrayList<>();
+    companyNames.add("All Companies");
 
-        s.append(
-                "Status: "
-        ).append(p.status)
-                .append("\n");
+    for (Company c : companies) {
+        companyNames.add(c.name);
+    }
 
-        s.append(
-                "Work: "
-        ).append(p.work)
-                .append("\n\n");
+    ArrayAdapter<String> companyAdapter =
+            new ArrayAdapter<String>(
+                    this,
+                    android.R.layout.simple_spinner_item,
+                    companyNames
+            ) {
+                @Override
+                public View getView(
+                        int position,
+                        View convertView,
+                        android.view.ViewGroup parent
+                ) {
+                    TextView v =
+                            (TextView) super.getView(
+                                    position,
+                                    convertView,
+                                    parent
+                            );
 
-        s.append(
-                "COLLECTION HISTORY\n"
+                    v.setTextSize(18);
+                    v.setTextColor(DARK);
+                    v.setTypeface(null, 1);
+                    v.setPadding(
+                            dp(14),
+                            dp(12),
+                            dp(14),
+                            dp(12)
+                    );
+
+                    return v;
+                }
+
+                @Override
+                public View getDropDownView(
+                        int position,
+                        View convertView,
+                        android.view.ViewGroup parent
+                ) {
+                    TextView v =
+                            (TextView) super.getDropDownView(
+                                    position,
+                                    convertView,
+                                    parent
+                            );
+
+                    v.setTextSize(17);
+                    v.setTextColor(DARK);
+                    v.setPadding(
+                            dp(14),
+                            dp(12),
+                            dp(14),
+                            dp(12)
+                    );
+
+                    return v;
+                }
+            };
+
+    companyAdapter.setDropDownViewResource(
+            android.R.layout.simple_spinner_dropdown_item
+    );
+
+    companySpinner.setAdapter(companyAdapter);
+
+    root.addView(
+            companySpinner,
+            new LinearLayout.LayoutParams(
+                    -1,
+                    dp(60)
+            )
+    );
+
+    // PROJECT SELECT
+    root.addView(
+            txt("☀️ Select Project", 18, true)
+    );
+
+    Spinner projectSpinner = new Spinner(this);
+
+    ArrayList<String> projectNames =
+            new ArrayList<>();
+
+    projectNames.add("Select Project");
+
+    for (Project p : projects) {
+        projectNames.add(
+                p.number +
+                        " • " +
+                        p.customer +
+                        " • " +
+                        p.site
         );
+    }
+
+    ArrayAdapter<String> projectAdapter =
+            new ArrayAdapter<String>(
+                    this,
+                    android.R.layout.simple_spinner_item,
+                    projectNames
+            ) {
+                @Override
+                public View getView(
+                        int position,
+                        View convertView,
+                        android.view.ViewGroup parent
+                ) {
+                    TextView v =
+                            (TextView) super.getView(
+                                    position,
+                                    convertView,
+                                    parent
+                            );
+
+                    v.setTextSize(18);
+                    v.setTextColor(DARK);
+                    v.setTypeface(null, 1);
+                    v.setPadding(
+                            dp(14),
+                            dp(12),
+                            dp(14),
+                            dp(12)
+                    );
+
+                    return v;
+                }
+
+                @Override
+                public View getDropDownView(
+                        int position,
+                        View convertView,
+                        android.view.ViewGroup parent
+                ) {
+                    TextView v =
+                            (TextView) super.getDropDownView(
+                                    position,
+                                    convertView,
+                                    parent
+                            );
+
+                    v.setTextSize(17);
+                    v.setTextColor(DARK);
+                    v.setPadding(
+                            dp(14),
+                            dp(12),
+                            dp(14),
+                            dp(12)
+                    );
+
+                    return v;
+                }
+            };
+
+    projectAdapter.setDropDownViewResource(
+            android.R.layout.simple_spinner_dropdown_item
+    );
+
+    projectSpinner.setAdapter(projectAdapter);
+
+    root.addView(
+            projectSpinner,
+            new LinearLayout.LayoutParams(
+                    -1,
+                    dp(60)
+            )
+    );
+
+    // SELECTED PROJECT AREA
+    LinearLayout selectedArea =
+            new LinearLayout(this);
+
+    selectedArea.setOrientation(
+            LinearLayout.VERTICAL
+    );
+
+    selectedArea.setPadding(
+            dp(4),
+            dp(10),
+            dp(4),
+            dp(10)
+    );
+
+    root.addView(selectedArea);
+
+    // PROJECT CHANGE
+    projectSpinner.setOnItemSelectedListener(
+            new android.widget.AdapterView.OnItemSelectedListener() {
+
+                @Override
+                public void onItemSelected(
+                        android.widget.AdapterView<?> parent,
+                        View view,
+                        int position,
+                        long id
+                ) {
+
+                    selectedArea.removeAllViews();
+
+                    if (position <= 0 ||
+                            position - 1 >= projects.size()) {
+
+                        selectedArea.addView(
+                                card(
+                                        "☝️ Select a project to view\n" +
+                                        "Project Value • Collection • Pending"
+                                )
+                        );
+
+                        return;
+                    }
+
+                    Project p =
+                            projects.get(position - 1);
+
+                    showPaymentProjectSummary(
+                            selectedArea,
+                            p
+                    );
+                }
+
+                @Override
+                public void onNothingSelected(
+                        android.widget.AdapterView<?> parent
+                ) {
+                }
+            }
+    );
+}
+
+
+// ---------------------------------------------------------
+// PROJECT PAYMENT SUMMARY
+// ---------------------------------------------------------
+
+void showPaymentProjectSummary(
+        LinearLayout area,
+        Project p
+) {
+
+    double projectValue =
+            p.amount;
+
+    double collection =
+            db.collection(p.id);
+
+    double pending =
+            projectValue - collection;
+
+    if (pending < 0)
+        pending = 0;
+
+    // PROJECT NAME
+    area.addView(
+            card(
+                    "☀️ " +
+                            p.number +
+                            "\n" +
+                            p.customer +
+                            "\n📍 " +
+                            p.site
+            )
+    );
+
+    // TOTAL PROJECT VALUE
+    TextView value =
+            card(
+                    "💰 TOTAL PROJECT VALUE\n₹" +
+                            fmt(projectValue)
+            );
+
+    value.setTextSize(20);
+    value.setTextColor(DARK);
+
+    area.addView(value);
+
+    // COLLECTION
+    TextView collected =
+            card(
+                    "💵 TOTAL COLLECTION\n₹" +
+                            fmt(collection)
+            );
+
+    collected.setTextSize(20);
+    collected.setTextColor(GREEN);
+
+    area.addView(collected);
+
+    // PENDING
+    TextView pendingView =
+            card(
+                    "🔴 PENDING AMOUNT\n₹" +
+                            fmt(pending)
+            );
+
+    pendingView.setTextSize(20);
+    pendingView.setTextColor(RED);
+
+    area.addView(pendingView);
+
+    // ADD PAYMENT
+    area.addView(
+            button(
+                    "+  ADD COLLECTION",
+                    GREEN,
+                    v -> paymentDialog(p, null)
+            )
+    );
+
+    // FULL REPORT
+    area.addView(
+            button(
+                    "📊  FULL PROJECT REPORT",
+                    BLUE,
+                    v -> projectFullReport(p)
+            )
+    );
+
+    // COLLECTION HISTORY TITLE
+    area.addView(
+            txt(
+                    "📅 Collection History",
+                    21,
+                    true
+            )
+    );
+
+    showPaymentHistory(area, p);
+}
+
+
+// ---------------------------------------------------------
+// PAYMENT HISTORY
+// ---------------------------------------------------------
+
+void showPaymentHistory(
+        LinearLayout area,
+        Project p
+) {
+
+    android.database.Cursor c =
+            db.getReadableDatabase().rawQuery(
+                    "SELECT id,date,amount,mode,note " +
+                            "FROM payments " +
+                            "WHERE project_id=? " +
+                            "ORDER BY date DESC,id DESC",
+                    new String[]{
+                            String.valueOf(p.id)
+                    }
+            );
+
+    if (!c.moveToFirst()) {
+
+        area.addView(
+                card(
+                        "📭 No collection entries yet."
+                )
+        );
+
+        c.close();
+        return;
+    }
+
+    do {
+
+        int id =
+                c.getInt(0);
+
+        String date =
+                safeText(c.getString(1));
+
+        double amount =
+                c.getDouble(2);
+
+        String mode =
+                safeText(c.getString(3));
+
+        String note =
+                safeText(c.getString(4));
+
+        area.addView(
+                card(
+                        "📅 Collection Date: " +
+                                date +
+
+                                "\n💰 Amount: ₹" +
+                                fmt(amount) +
+
+                                "\n💳 Mode: " +
+                                mode +
+
+                                (
+                                        note.isEmpty()
+                                                ? ""
+                                                : "\n📝 Note: " +
+                                                note
+                                )
+                )
+        );
+
+        LinearLayout row =
+                new LinearLayout(this);
+
+        row.setOrientation(
+                LinearLayout.HORIZONTAL
+        );
+
+        Button edit =
+                button(
+                        "✏️ Edit",
+                        BLUE,
+                        v -> {
+
+                            paymentDialog(
+                                    p,
+                                    id
+                            );
+                        }
+                );
+
+        Button delete =
+                button(
+                        "🗑 Delete",
+                        RED,
+                        v -> confirm(
+                                "Delete this collection?",
+                                () -> {
+
+                                    db.getWritableDatabase()
+                                            .delete(
+                                                    "payments",
+                                                    "id=?",
+                                                    new String[]{
+                                                            String.valueOf(
+                                                                    id
+                                                            )
+                                                    }
+                                            );
+
+                                    projectPayments(p);
+                                }
+                        )
+                );
+
+        row.addView(
+                edit,
+                new LinearLayout.LayoutParams(
+                        0,
+                        dp(62),
+                        1
+                )
+        );
+
+        row.addView(
+                delete,
+                new LinearLayout.LayoutParams(
+                        0,
+                        dp(62),
+                        1
+                )
+        );
+
+        area.addView(row);
+
+    } while (c.moveToNext());
+
+    c.close();
+}
+
+
+// ---------------------------------------------------------
+// OLD COMPATIBILITY METHOD
+// ---------------------------------------------------------
+
+void showPaymentHistory(Project p) {
+
+    showPaymentHistory(
+            root,
+            p
+    );
+}
+
+
+// ---------------------------------------------------------
+// PROJECT PAYMENT PAGE
+// ---------------------------------------------------------
+
+void projectPayments(Project p) {
+
+    page("Payments / Collection");
+
+    LinearLayout area =
+            new LinearLayout(this);
+
+    area.setOrientation(
+            LinearLayout.VERTICAL
+    );
+
+    area.setPadding(
+            dp(4),
+            dp(4),
+            dp(4),
+            dp(10)
+    );
+
+    root.addView(area);
+
+    showPaymentProjectSummary(
+            area,
+            p
+    );
+}
+
+
+// ---------------------------------------------------------
+// ADD / EDIT PAYMENT
+// ---------------------------------------------------------
+
+void paymentDialog(
+        Project p,
+        Integer paymentId
+) {
+
+    LinearLayout l =
+            new LinearLayout(this);
+
+    l.setOrientation(
+            LinearLayout.VERTICAL
+    );
+
+    l.setPadding(
+            dp(14),
+            dp(8),
+            dp(14),
+            dp(8)
+    );
+
+    TextView projectTitle =
+            txt(
+                    "☀️ " +
+                            p.number +
+                            " • " +
+                            p.customer,
+                    19,
+                    true
+            );
+
+    l.addView(projectTitle);
+
+    EditText amount =
+            field(
+                    "Collection Amount ₹",
+                    ""
+            );
+
+    EditText date =
+            field(
+                    "Collection Date YYYY-MM-DD",
+                    todayISO()
+            );
+
+    Spinner mode =
+            new Spinner(this);
+
+    String[] modes = {
+            "Cash",
+            "UPI",
+            "Bank Transfer",
+            "Cheque",
+            "Other"
+    };
+
+    ArrayAdapter<String> ma =
+            new ArrayAdapter<String>(
+                    this,
+                    android.R.layout.simple_spinner_item,
+                    modes
+            ) {
+
+                @Override
+                public View getView(
+                        int pos,
+                        View cv,
+                        android.view.ViewGroup par
+                ) {
+
+                    TextView v =
+                            (TextView)
+                                    super.getView(
+                                            pos,
+                                            cv,
+                                            par
+                                    );
+
+                    v.setTextSize(18);
+                    v.setTextColor(DARK);
+                    v.setTypeface(null, 1);
+                    v.setPadding(
+                            dp(12),
+                            dp(10),
+                            dp(12),
+                            dp(10)
+                    );
+
+                    return v;
+                }
+            };
+
+    ma.setDropDownViewResource(
+            android.R.layout.simple_spinner_dropdown_item
+    );
+
+    mode.setAdapter(ma);
+
+    EditText note =
+            field(
+                    "Collection Note",
+                    ""
+            );
+
+    l.addView(amount);
+    l.addView(date);
+
+    l.addView(
+            txt(
+                    "💳 Payment Mode",
+                    17,
+                    true
+            )
+    );
+
+    l.addView(
+            mode,
+            new LinearLayout.LayoutParams(
+                    -1,
+                    dp(60)
+            )
+    );
+
+    l.addView(note);
+
+    // EDIT EXISTING
+    if (paymentId != null) {
 
         android.database.Cursor c =
                 db.getReadableDatabase().rawQuery(
-                        "SELECT date,amount,mode,note " +
-                                "FROM payments " +
-                                "WHERE project_id=? " +
-                                "ORDER BY date DESC,id DESC",
+                        "SELECT amount,date,mode,note " +
+                                "FROM payments WHERE id=?",
                         new String[]{
-                                String.valueOf(p.id)
+                                String.valueOf(
+                                        paymentId
+                                )
                         }
                 );
 
-        while (c.moveToNext()) {
+        if (c.moveToFirst()) {
 
-            s.append(
-                    c.getString(0)
-            )
-                    .append(" | ₹")
-                    .append(fmt(c.getDouble(1)))
-                    .append(" | ")
-                    .append(safeText(c.getString(2)))
-                    .append(" | ")
-                    .append(safeText(c.getString(3)))
-                    .append("\n");
+            amount.setText(
+                    String.valueOf(
+                            c.getDouble(0)
+                    )
+            );
+
+            date.setText(
+                    safeText(
+                            c.getString(1)
+                    )
+            );
+
+            note.setText(
+                    safeText(
+                            c.getString(3)
+                    )
+            );
+
+            for (int i = 0;
+                 i < modes.length;
+                 i++) {
+
+                if (
+                        modes[i]
+                                .equalsIgnoreCase(
+                                        safeText(
+                                                c.getString(2)
+                                        )
+                                )
+                ) {
+
+                    mode.setSelection(i);
+                    break;
+                }
+            }
         }
 
         c.close();
-
-        s.append(
-                "\nEXPENSES\n"
-        );
-
-        c =
-                db.getReadableDatabase().rawQuery(
-                        "SELECT date,category,amount,note " +
-                                "FROM expenses " +
-                                "WHERE project_id=? " +
-                                "ORDER BY date DESC,id DESC",
-                        new String[]{
-                                String.valueOf(p.id)
-                        }
-                );
-
-        while (c.moveToNext()) {
-
-            s.append(
-                    c.getString(0)
-            )
-                    .append(" | ")
-                    .append(
-                            safeText(c.getString(1))
-                    )
-                    .append(" | ₹")
-                    .append(fmt(c.getDouble(2)))
-                    .append(" | ")
-                    .append(
-                            safeText(c.getString(3))
-                    )
-                    .append("\n");
-        }
-
-        c.close();
-
-        return s.toString();
     }
 
+    AlertDialog d =
+            new AlertDialog.Builder(this)
+                    .setTitle(
+                            paymentId == null
+                                    ? "Add Collection"
+                                    : "Edit Collection"
+                    )
+                    .setView(l)
+                    .setNegativeButton(
+                            "Cancel",
+                            null
+                    )
+                    .setPositiveButton(
+                            "Save",
+                            null
+                    )
+                    .create();
+
+    d.setOnShowListener(x -> {
+
+        Button save =
+                d.getButton(
+                        AlertDialog.BUTTON_POSITIVE
+                );
+
+        save.setTextSize(18);
+        save.setTypeface(null, 1);
+
+        save.setOnClickListener(v -> {
+
+            double value =
+                    fmtN(
+                            amount.getText()
+                                    .toString()
+                    );
+
+            if (value <= 0) {
+
+                amount.setError(
+                        "Enter collection amount"
+                );
+
+                return;
+            }
+
+            android.content.ContentValues cv =
+                    new android.content.ContentValues();
+
+            cv.put(
+                    "project_id",
+                    p.id
+            );
+
+            cv.put(
+                    "amount",
+                    value
+            );
+
+            cv.put(
+                    "date",
+                    date.getText()
+                            .toString()
+                            .trim()
+            );
+
+            cv.put(
+                    "mode",
+                    mode.getSelectedItem()
+                            .toString()
+            );
+
+            cv.put(
+                    "note",
+                    note.getText()
+                            .toString()
+                            .trim()
+            );
+
+            if (paymentId == null) {
+
+                db.getWritableDatabase()
+                        .insert(
+                                "payments",
+                                null,
+                                cv
+                        );
+
+            } else {
+
+                db.getWritableDatabase()
+                        .update(
+                                "payments",
+                                cv,
+                                "id=?",
+                                new String[]{
+                                        String.valueOf(
+                                                paymentId
+                                        )
+                                }
+                        );
+            }
+
+            d.dismiss();
+
+            projectPayments(p);
+        });
+    });
+
+    d.show();
+}
     // ---------------------------------------------------------
     // PAYMENTS
     // ---------------------------------------------------------
