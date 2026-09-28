@@ -747,6 +747,38 @@ public class DBHelper extends SQLiteOpenHelper {
         return result;
     }
 
+    // =========================================================
+    // HALF DAY
+    // =========================================================
+
+    public int halfDayDays(
+            int workerId,
+            String month
+    ) {
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        "SELECT COUNT(*) FROM attendance " +
+                                "WHERE worker_id=? " +
+                                "AND status='Half Day' " +
+                                "AND date LIKE ?",
+                        new String[]{
+                                String.valueOf(workerId),
+                                month + "%"
+                        }
+                );
+
+        int result = 0;
+
+        if (c.moveToFirst()) {
+            result = c.getInt(0);
+        }
+
+        c.close();
+
+        return result;
+    }
+
     public int absentDays(
             int workerId,
             String month
@@ -819,18 +851,45 @@ public class DBHelper extends SQLiteOpenHelper {
             String month
     ) {
 
+        /*
+         * Monthly salary is used first.
+         * If monthly salary is not set,
+         * attendance based salary is calculated.
+         *
+         * Present  = 100%
+         * Half Day = 50%
+         * Absent   = 0%
+         */
+
         if (worker.monthlySalary > 0) {
 
             return worker.monthlySalary;
         }
 
-        int days =
+        int present =
                 presentDays(
                         worker.id,
                         month
                 );
 
-        return days * worker.dailySalary;
+        int halfDay =
+                halfDayDays(
+                        worker.id,
+                        month
+                );
+
+        double presentSalary =
+                present *
+                        worker.dailySalary;
+
+        double halfDaySalary =
+                halfDay *
+                        worker.dailySalary *
+                        0.5;
+
+        return
+                presentSalary +
+                        halfDaySalary;
     }
 
     public double salaryBalance(
@@ -853,6 +912,10 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
+    // =========================================================
+    // WORKER REPORT
+    // =========================================================
+
     public String workerReport(
             Worker worker,
             String month
@@ -860,6 +923,12 @@ public class DBHelper extends SQLiteOpenHelper {
 
         int present =
                 presentDays(
+                        worker.id,
+                        month
+                );
+
+        int halfDay =
+                halfDayDays(
                         worker.id,
                         month
                 );
@@ -891,6 +960,9 @@ public class DBHelper extends SQLiteOpenHelper {
 
                         "\nPresent: " +
                         present +
+
+                        "\nHalf Day: " +
+                        halfDay +
 
                         "\nAbsent: " +
                         absent +
