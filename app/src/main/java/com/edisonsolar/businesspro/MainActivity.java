@@ -2297,8 +2297,153 @@ public class MainActivity extends Activity {
 
                         break;
                     }
+                                        type.setSelection(i);
+
+                        break;
+                    }
+                }
+
+                c.close();
+            }
+        } else if (selectedProject != null) {
+
+            for (int i = 0; i < projects.size(); i++) {
+
+                if (projects.get(i).id == selectedProject.id) {
+
+                    projectSpinner.setSelection(i + 1);
+
+                    break;
                 }
             }
-
         }
+
+        AlertDialog dialog =
+                new AlertDialog.Builder(this)
+                        .setTitle(
+                                expenseId == null
+                                        ? "Add Expense"
+                                        : "Edit Expense"
+                        )
+                        .setView(layout)
+                        .setNegativeButton(
+                                "Cancel",
+                                null
+                        )
+                        .setPositiveButton(
+                                "Save",
+                                null
+                        )
+                        .create();
+
+        dialog.setOnShowListener(
+                x -> dialog.getButton(-1)
+                        .setOnClickListener(v -> {
+
+                            if (projectSpinner.getSelectedItemPosition() <= 0) {
+
+                                Toast.makeText(
+                                        this,
+                                        "Select Project / Site",
+                                        Toast.LENGTH_SHORT
+                                ).show();
+
+                                return;
+                            }
+
+                            double value =
+                                    num(
+                                            amount.getText()
+                                                    .toString()
+                                    );
+
+                            if (value <= 0) {
+
+                                amount.setError(
+                                        "Enter amount"
+                                );
+
+                                return;
+                            }
+
+                            int projectId =
+                                    projects.get(
+                                            projectSpinner
+                                                    .getSelectedItemPosition() - 1
+                                    ).id;
+
+                            ContentValues cv =
+                                    new ContentValues();
+
+                            cv.put(
+                                    "project_id",
+                                    projectId
+                            );
+
+                            cv.put(
+                                    "amount",
+                                    value
+                            );
+
+                            cv.put(
+                                    "category",
+                                    type.getSelectedItem()
+                                            .toString()
+                            );
+
+                            cv.put(
+                                    "date",
+                                    date.getText()
+                                            .toString()
+                                            .trim()
+                            );
+
+                            cv.put(
+                                    "note",
+                                    note.getText()
+                                            .toString()
+                                            .trim()
+                            );
+
+                            if (expenseId == null) {
+
+                                db.getWritableDatabase()
+                                        .insert(
+                                                "expenses",
+                                                null,
+                                                cv
+                                        );
+
+                            } else {
+
+                                db.getWritableDatabase()
+                                        .update(
+                                                "expenses",
+                                                cv,
+                                                "id=?",
+                                                new String[]{
+                                                        String.valueOf(
+                                                                expenseId
+                                                        )
+                                                }
+                                        );
+                            }
+
+                            dialog.dismiss();
+
+                            if (selectedProject != null) {
+
+                                projectExpenses(
+                                        selectedProject
+                                );
+
+                            } else {
+
+                                expenses();
+                            }
+                        })
+        );
+
+        dialog.show();
     }
+}    
