@@ -475,13 +475,17 @@ public class MainActivity extends Activity {
                         p.date;
     }
 
+    // =========================================================
+    // UPDATED: PRESENT + HALF DAY WORK DAYS
+    // =========================================================
+
     int projectWorkDays(Project p) {
 
         android.database.Cursor c =
                 db.getReadableDatabase().rawQuery(
                         "SELECT COUNT(DISTINCT date) " +
                                 "FROM attendance " +
-                                "WHERE status='Present' " +
+                                "WHERE status IN ('Present','Half Day') " +
                                 "AND (site=? OR site LIKE ? OR site LIKE ?)",
                         new String[]{
                                 p.site,
@@ -500,17 +504,20 @@ public class MainActivity extends Activity {
         return n;
     }
 
+    // =========================================================
+    // UPDATED: HALF DAY = 50% SALARY
+    // =========================================================
+
     double projectSalary(Project p) {
 
         double total = 0;
 
         android.database.Cursor c =
                 db.getReadableDatabase().rawQuery(
-                        "SELECT a.worker_id, COUNT(*) " +
+                        "SELECT a.worker_id,a.status " +
                                 "FROM attendance a " +
-                                "WHERE a.status='Present' " +
-                                "AND (a.site=? OR a.site LIKE ? OR a.site LIKE ?) " +
-                                "GROUP BY a.worker_id",
+                                "WHERE a.status IN ('Present','Half Day') " +
+                                "AND (a.site=? OR a.site LIKE ? OR a.site LIKE ?)",
                         new String[]{
                                 p.site,
                                 p.number + "%",
@@ -523,9 +530,26 @@ public class MainActivity extends Activity {
             Worker w =
                     db.worker(c.getInt(0));
 
-            total +=
-                    c.getInt(1) *
-                            w.dailySalary;
+            if (w == null)
+                continue;
+
+            String status =
+                    safeText(c.getString(1));
+
+            if (
+                    "Present".equalsIgnoreCase(status)
+            ) {
+
+                total +=
+                        w.dailySalary;
+
+            } else if (
+                    "Half Day".equalsIgnoreCase(status)
+            ) {
+
+                total +=
+                        w.dailySalary * 0.5;
+            }
         }
 
         c.close();
@@ -1501,15 +1525,19 @@ public class MainActivity extends Activity {
         c.close();
     }
 
+    // =========================================================
+    // UPDATED: PROJECT WORKERS WITH HALF DAY
+    // =========================================================
+
     void showProjectWorkers(Project p) {
 
         android.database.Cursor c =
                 db.getReadableDatabase().rawQuery(
-                        "SELECT a.worker_id,COUNT(DISTINCT a.date) " +
+                        "SELECT a.worker_id,a.status,COUNT(DISTINCT a.date) " +
                                 "FROM attendance a " +
-                                "WHERE a.status='Present' " +
+                                "WHERE a.status IN ('Present','Half Day') " +
                                 "AND (a.site=? OR a.site LIKE ? OR a.site LIKE ?) " +
-                                "GROUP BY a.worker_id",
+                                "GROUP BY a.worker_id,a.status",
                         new String[]{
                                 p.site,
                                 p.number + "%",
@@ -1529,33 +1557,105 @@ public class MainActivity extends Activity {
             return;
         }
 
+        HashMap<Integer, Integer> presentMap =
+                new HashMap<>();
+
+        HashMap<Integer, Integer> halfDayMap =
+                new HashMap<>();
+
         do {
 
-            Worker w =
-                    db.worker(c.getInt(0));
+            int workerId =
+                    c.getInt(0);
+
+            String status =
+                    safeText(c.getString(1));
 
             int days =
-                    c.getInt(1);
+                    c.getInt(2);
 
-            root.addView(
-                    card(
-                            "👷 " + w.name +
-                                    "\nPresent Days: " +
-                                    days +
-                                    "\nDaily Salary: ₹" +
-                                    fmt(w.dailySalary) +
-                                    "\nSite Salary: ₹" +
-                                    fmt(
-                                            days *
-                                                    w.dailySalary
-                                    )
-                    )
-            );
+            if (
+                    "Present".equalsIgnoreCase(status)
+            ) {
+
+                presentMap.put(
+                        workerId,
+                        days
+                );
+
+            } else if (
+                    "Half Day".equalsIgnoreCase(status)
+            ) {
+
+                halfDayMap.put(
+                        workerId,
+                        days
+                );
+            }
 
         } while (c.moveToNext());
 
         c.close();
+
+        HashSet<Integer> workerIds =
+                new HashSet<>();
+
+        workerIds.addAll(
+                presentMap.keySet()
+        );
+
+        workerIds.addAll(
+                halfDayMap.keySet()
+        );
+
+        for (Integer workerId : workerIds) {
+
+            Worker w =
+                    db.worker(workerId);
+
+            if (w == null)
+                continue;
+
+            int present =
+                    presentMap.containsKey(workerId)
+                            ? presentMap.get(workerId)
+                            : 0;
+
+            int halfDay =
+                    halfDayMap.containsKey(workerId)
+                            ? halfDayMap.get(workerId)
+                            : 0;
+
+            double salary =
+                    (present * w.dailySalary)
+                            +
+                    (halfDay *
+                            w.dailySalary *
+                            0.5);
+
+            root.addView(
+                    card(
+                            "👷 " + w.name +
+
+                                    "\nPresent Days: " +
+                                    present +
+
+                                    "\nHalf Days: " +
+                                    halfDay +
+
+                                    "\nDaily Salary: ₹" +
+                                    fmt(w.dailySalary) +
+
+                                    "\nSite Salary: ₹" +
+                                    fmt(salary)
+                    )
+            );
+        }
     }
+
+    // =========================================================
+    // UPDATED: HALF DAY ALSO COUNTS AS WORK DAY
+    // =========================================================
 
     void showProjectWorkDays(Project p) {
 
@@ -1563,7 +1663,7 @@ public class MainActivity extends Activity {
                 db.getReadableDatabase().rawQuery(
                         "SELECT DISTINCT date " +
                                 "FROM attendance " +
-                                "WHERE status='Present' " +
+                                "WHERE status IN ('Present','Half Day') " +
                                 "AND (site=? OR site LIKE ? OR site LIKE ?) " +
                                 "ORDER BY date",
                         new String[]{
@@ -2344,19 +2444,40 @@ public class MainActivity extends Activity {
                             Locale.getDefault()
                     ).format(new Date());
 
+            // =================================================
+            // UPDATED: HALF DAY COUNT DISPLAY
+            // =================================================
+
+            int present =
+                    db.presentDays(
+                            w.id,
+                            m
+                    );
+
+            int halfDay =
+                    db.halfDayDays(
+                            w.id,
+                            m
+                    );
+
+            int absent =
+                    db.absentDays(
+                            w.id,
+                            m
+                    );
+
             root.addView(
                     card(
                             "👷 " + w.name +
+
                                     "\nPresent: " +
-                                    db.presentDays(
-                                            w.id,
-                                            m
-                                    ) +
+                                    present +
+
+                                    "  Half Day: " +
+                                    halfDay +
+
                                     "  Absent: " +
-                                    db.absentDays(
-                                            w.id,
-                                            m
-                                    ) +
+                                    absent +
 
                                     "\nDaily: ₹" +
                                     fmt(w.dailySalary) +
@@ -2372,1154 +2493,3 @@ public class MainActivity extends Activity {
                                     ) +
 
                                     "\nBalance: ₹" +
-                                    fmt(
-                                            db.salaryBalance(
-                                                    w,
-                                                    m
-                                            )
-                                    )
-                    )
-            );
-
-            root.addView(
-                    button(
-                            "✏️ Edit Worker",
-                            BLUE,
-                            v -> workerDialog(w)
-                    )
-            );
-
-            root.addView(
-                    button(
-                            "📅 Attendance",
-                            GREEN,
-                            v -> attendanceDialog(w)
-                    )
-            );
-
-            root.addView(
-                    button(
-                            "💵 Advance",
-                            ORANGE,
-                            v -> advanceDialog(w)
-                    )
-            );
-
-            root.addView(
-                    button(
-                            "🗑 Delete Worker",
-                            RED,
-                            v -> confirm(
-                                    "Delete worker?",
-                                    () -> {
-                                        db.deleteWorker(w.id);
-                                        workers();
-                                    }
-                            )
-                    )
-            );
-        }
-
-        root.addView(
-                button(
-                        "📄 Salary PDF / WhatsApp",
-                        PURPLE,
-                        v -> salaryShare()
-                )
-        );
-    }
-
-    void workerDialog(Worker old) {
-
-        LinearLayout l =
-                new LinearLayout(this);
-
-        l.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        EditText n =
-                field(
-                        "Worker Name",
-                        old == null ? "" : old.name
-                );
-
-        EditText p =
-                field(
-                        "Phone",
-                        old == null ? "" : old.phone
-                );
-
-        EditText d =
-                field(
-                        "Daily Salary",
-                        old == null
-                                ? ""
-                                : "" + old.dailySalary
-                );
-
-        EditText m =
-                field(
-                        "Monthly Salary",
-                        old == null
-                                ? ""
-                                : "" + old.monthlySalary
-                );
-
-        l.addView(n);
-        l.addView(p);
-        l.addView(d);
-        l.addView(m);
-
-        new AlertDialog.Builder(this)
-                .setTitle(
-                        old == null
-                                ? "Add Worker"
-                                : "Edit Worker"
-                )
-                .setView(l)
-                .setNegativeButton(
-                        "Cancel",
-                        null
-                )
-                .setPositiveButton(
-                        "Save",
-                        (x, y) -> {
-
-                            Worker w =
-                                    old == null
-                                            ? new Worker()
-                                            : old;
-
-                            w.name =
-                                    n.getText()
-                                            .toString();
-
-                            w.phone =
-                                    p.getText()
-                                            .toString();
-
-                            w.dailySalary =
-                                    fmtN(
-                                            d.getText()
-                                                    .toString()
-                                    );
-
-                            w.monthlySalary =
-                                    fmtN(
-                                            m.getText()
-                                                    .toString()
-                                    );
-
-                            db.saveWorker(w);
-
-                            workers();
-                        }
-                )
-                .show();
-    }
-
-    // ---------------------------------------------------------
-    // ATTENDANCE
-    // ---------------------------------------------------------
-
-    void attendanceDialog(Worker w) {
-
-        LinearLayout l =
-                new LinearLayout(this);
-
-        l.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        l.setPadding(
-                dp(8),
-                dp(4),
-                dp(8),
-                dp(4)
-        );
-
-        EditText date =
-                field(
-                        "Date YYYY-MM-DD",
-                        todayISO()
-                );
-
-        Spinner site =
-                new Spinner(this);
-
-        ArrayList<Project> projectList =
-                db.projects();
-
-        ArrayList<String> siteNames =
-                new ArrayList<>();
-
-        siteNames.add(
-                "Select Project / Site"
-        );
-
-        for (Project p : projectList) {
-
-            siteNames.add(
-                    p.number +
-                            " • " +
-                            p.site +
-                            " • " +
-                            p.customer
-            );
-        }
-
-        ArrayAdapter<String> siteAdapter =
-                new ArrayAdapter<String>(
-                        this,
-                        android.R.layout.simple_spinner_item,
-                        siteNames
-                ) {
-
-                    @Override
-                    public View getView(
-                            int pos,
-                            View cv,
-                            android.view.ViewGroup par
-                    ) {
-
-                        TextView v =
-                                (TextView)
-                                        super.getView(
-                                                pos,
-                                                cv,
-                                                par
-                                        );
-
-                        v.setTextSize(17);
-                        v.setTextColor(DARK);
-                        v.setTypeface(null, 1);
-                        v.setPadding(
-                                dp(12),
-                                dp(10),
-                                dp(12),
-                                dp(10)
-                        );
-
-                        return v;
-                    }
-
-                    @Override
-                    public View getDropDownView(
-                            int pos,
-                            View cv,
-                            android.view.ViewGroup par
-                    ) {
-
-                        TextView v =
-                                (TextView)
-                                        super.getDropDownView(
-                                                pos,
-                                                cv,
-                                                par
-                                        );
-
-                        v.setTextSize(17);
-                        v.setTextColor(DARK);
-                        v.setTypeface(null, 1);
-                        v.setPadding(
-                                dp(14),
-                                dp(12),
-                                dp(14),
-                                dp(12)
-                        );
-
-                        return v;
-                    }
-                };
-
-        siteAdapter.setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item
-        );
-
-        site.setAdapter(siteAdapter);
-
-        TextView statusLabel =
-                txt(
-                        "Attendance Status",
-                        17,
-                        true
-                );
-
-        Spinner status =
-                new Spinner(this);
-
-        String[] options = {
-                "Present",
-                "Absent"
-        };
-
-        ArrayAdapter<String> adapter =
-                new ArrayAdapter<String>(
-                        this,
-                        android.R.layout.simple_spinner_item,
-                        options
-                ) {
-
-                    @Override
-                    public View getView(
-                            int position,
-                            View convertView,
-                            android.view.ViewGroup parent
-                    ) {
-
-                        TextView v =
-                                (TextView)
-                                        super.getView(
-                                                position,
-                                                convertView,
-                                                parent
-                                        );
-
-                        v.setTextSize(18);
-                        v.setTextColor(DARK);
-                        v.setTypeface(null, 1);
-                        v.setPadding(
-                                dp(12),
-                                dp(10),
-                                dp(12),
-                                dp(10)
-                        );
-
-                        return v;
-                    }
-
-                    @Override
-                    public View getDropDownView(
-                            int position,
-                            View convertView,
-                            android.view.ViewGroup parent
-                    ) {
-
-                        TextView v =
-                                (TextView)
-                                        super.getDropDownView(
-                                                position,
-                                                convertView,
-                                                parent
-                                        );
-
-                        v.setTextSize(18);
-                        v.setTextColor(DARK);
-                        v.setTypeface(null, 1);
-                        v.setPadding(
-                                dp(16),
-                                dp(12),
-                                dp(16),
-                                dp(12)
-                        );
-
-                        return v;
-                    }
-                };
-
-        adapter.setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item
-        );
-
-        status.setAdapter(adapter);
-
-        l.addView(date);
-
-        l.addView(statusLabel);
-
-        l.addView(
-                status,
-                new LinearLayout.LayoutParams(
-                        -1,
-                        dp(58)
-                )
-        );
-
-        l.addView(
-                txt(
-                        "Project / Site",
-                        17,
-                        true
-                )
-        );
-
-        l.addView(
-                site,
-                new LinearLayout.LayoutParams(
-                        -1,
-                        dp(58)
-                )
-        );
-
-        AlertDialog d =
-                new AlertDialog.Builder(this)
-                        .setTitle(
-                                "Add / Edit Attendance"
-                        )
-                        .setView(l)
-                        .setNegativeButton(
-                                "Cancel",
-                                null
-                        )
-                        .setPositiveButton(
-                                "Save",
-                                null
-                        )
-                        .create();
-
-        d.setOnShowListener(x ->
-                d.getButton(-1)
-                        .setOnClickListener(v -> {
-
-                            int sitePos =
-                                    site.getSelectedItemPosition();
-
-                            if (sitePos <= 0) {
-
-                                Toast.makeText(
-                                        this,
-                                        "Select Project / Site",
-                                        Toast.LENGTH_SHORT
-                                ).show();
-
-                                return;
-                            }
-
-                            String selectedStatus =
-                                    status.getSelectedItem()
-                                            .toString();
-
-                            String selectedSite =
-                                    projectList
-                                            .get(sitePos - 1)
-                                            .number +
-                                            " | " +
-                                            projectList
-                                                    .get(sitePos - 1)
-                                                    .site;
-
-                            saveAttendanceRaw(
-                                    w.id,
-                                    date.getText()
-                                            .toString(),
-                                    selectedStatus,
-                                    selectedSite
-                            );
-
-                            d.dismiss();
-
-                            workers();
-                        })
-        );
-
-        d.show();
-    }
-
-    void saveAttendanceRaw(
-            int wid,
-            String date,
-            String status,
-            String site
-    ) {
-
-        android.content.ContentValues v =
-                new android.content.ContentValues();
-
-        v.put(
-                "worker_id",
-                wid
-        );
-
-        v.put(
-                "date",
-                date
-        );
-
-        v.put(
-                "status",
-                status
-        );
-
-        v.put(
-                "site",
-                site
-        );
-
-        v.put(
-                "note",
-                ""
-        );
-
-        db.getWritableDatabase()
-                .insertWithOnConflict(
-                        "attendance",
-                        null,
-                        v,
-                        android.database.sqlite.SQLiteDatabase
-                                .CONFLICT_REPLACE
-                );
-    }
-
-    void advanceDialog(Worker w) {
-
-        LinearLayout l =
-                new LinearLayout(this);
-
-        l.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        EditText a =
-                field(
-                        "Advance Amount",
-                        ""
-                );
-
-        EditText d =
-                field(
-                        "Date YYYY-MM-DD",
-                        todayISO()
-                );
-
-        EditText n =
-                field(
-                        "Note",
-                        ""
-                );
-
-        l.addView(a);
-        l.addView(d);
-        l.addView(n);
-
-        new AlertDialog.Builder(this)
-                .setTitle(
-                        "Salary Advance"
-                )
-                .setView(l)
-                .setNegativeButton(
-                        "Cancel",
-                        null
-                )
-                .setPositiveButton(
-                        "Save",
-                        (x, y) -> {
-
-                            db.saveAdvance(
-                                    w.id,
-                                    fmtN(
-                                            a.getText()
-                                                    .toString()
-                                    ),
-                                    d.getText()
-                                            .toString(),
-                                    n.getText()
-                                            .toString()
-                            );
-
-                            workers();
-                        }
-                )
-                .show();
-    }
-
-    // ---------------------------------------------------------
-    // DATE / CALENDAR
-    // ---------------------------------------------------------
-
-    String today() {
-
-        return new SimpleDateFormat(
-                "dd-MM-yyyy",
-                Locale.getDefault()
-        ).format(new Date());
-    }
-
-    String todayISO() {
-
-        return new SimpleDateFormat(
-                "yyyy-MM-dd",
-                Locale.getDefault()
-        ).format(new Date());
-    }
-
-    void salaryShare() {
-
-        String m =
-                new SimpleDateFormat(
-                        "yyyy-MM",
-                        Locale.getDefault()
-                ).format(new Date());
-
-        StringBuilder s =
-                new StringBuilder(
-                        "EDISON SOLAR WORKER SALARY REPORT\n" +
-                                "Month: " +
-                                m +
-                                "\n\n"
-                );
-
-        for (Worker w : db.workers()) {
-
-            s.append(
-                    db.workerReport(
-                            w,
-                            m
-                    )
-            );
-
-            s.append(
-                    "\n\n"
-            );
-        }
-
-        share(
-                s.toString()
-        );
-    }
-
-    void calendar() {
-
-        page("Calendar");
-
-        root.addView(
-                button(
-                        "📅 Select Date",
-                        PURPLE,
-                        v -> {
-
-                            Calendar c =
-                                    Calendar.getInstance();
-
-                            new DatePickerDialog(
-                                    this,
-                                    (x, y, m, d) ->
-                                            calendarDay(
-                                                    String.format(
-                                                            Locale.getDefault(),
-                                                            "%02d-%02d-%04d",
-                                                            d,
-                                                            m + 1,
-                                                            y
-                                                    )
-                                            ),
-                                    c.get(
-                                            Calendar.YEAR
-                                    ),
-                                    c.get(
-                                            Calendar.MONTH
-                                    ),
-                                    c.get(
-                                            Calendar.DAY_OF_MONTH
-                                    )
-                            ).show();
-                        }
-                )
-        );
-    }
-
-    void calendarDay(String date) {
-
-        page(
-                "Work • " +
-                        date
-        );
-
-        boolean found = false;
-
-        for (Project p : db.projects()) {
-
-            if (date.equals(p.date)) {
-
-                found = true;
-
-                root.addView(
-                        card(
-                                p.number +
-                                        "\n" +
-                                        p.company +
-                                        "\n" +
-                                        p.customer +
-                                        "\n" +
-                                        p.site +
-                                        "\n" +
-                                        fmt(p.kw) +
-                                        " kW\n" +
-                                        p.status
-                        )
-                );
-            }
-        }
-
-        if (!found) {
-
-            root.addView(
-                    card(
-                            "No project on this date."
-                    )
-            );
-        }
-    }
-
-    // ---------------------------------------------------------
-    // REPORTS
-    // ---------------------------------------------------------
-
-    void reports() {
-
-        page(
-                "Reports / PDF"
-        );
-
-        root.addView(
-                card(
-                        db.dashboard()
-                )
-        );
-
-        for (Project p : db.projects()) {
-
-            root.addView(
-                    button(
-                            "📄 PDF " + p.number,
-                            PURPLE,
-                            v -> pdf(p)
-                    )
-            );
-        }
-
-        root.addView(
-                button(
-                        "📱 WhatsApp / Share",
-                        GREEN,
-                        v -> share(
-                                db.dashboard()
-                        )
-                )
-        );
-    }
-
-    // ---------------------------------------------------------
-    // PHOTOS
-    // ---------------------------------------------------------
-
-    void photos(Project p) {
-
-        photoProject = p;
-
-        page(
-                "Photos / Gallery"
-        );
-
-        root.addView(
-                card(
-                        p.customer +
-                                "\nSaved Photos: " +
-                                db.photos(p.id).size()
-                )
-        );
-
-        root.addView(
-                button(
-                        "📷 Take Photo",
-                        BLUE,
-                        v -> takePhoto()
-                )
-        );
-
-        root.addView(
-                button(
-                        "🖼 Open Gallery",
-                        PURPLE,
-                        v -> openGallery()
-                )
-        );
-    }
-
-    void takePhoto() {
-
-        if (
-                ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.CAMERA
-                ) != PackageManager.PERMISSION_GRANTED
-        ) {
-
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{
-                            Manifest.permission.CAMERA
-                    },
-                    101
-            );
-
-            return;
-        }
-
-        try {
-
-            File dir =
-                    getExternalFilesDir(
-                            Environment.DIRECTORY_PICTURES
-                    );
-
-            if (!dir.exists())
-                dir.mkdirs();
-
-            File f =
-                    new File(
-                            dir,
-                            "EDISON_" +
-                                    System.currentTimeMillis() +
-                                    ".jpg"
-                    );
-
-            cameraUri =
-                    FileProvider.getUriForFile(
-                            this,
-                            getPackageName() +
-                                    ".fileprovider",
-                            f
-                    );
-
-            Intent i =
-                    new Intent(
-                            MediaStore.ACTION_IMAGE_CAPTURE
-                    );
-
-            i.putExtra(
-                    MediaStore.EXTRA_OUTPUT,
-                    cameraUri
-            );
-
-            i.addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION |
-                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            );
-
-            startActivityForResult(
-                    i,
-                    101
-            );
-
-        } catch (Exception e) {
-
-            Toast.makeText(
-                    this,
-                    e.toString(),
-                    Toast.LENGTH_LONG
-            ).show();
-        }
-    }
-
-    void openGallery() {
-
-        startActivityForResult(
-                new Intent(
-                        Intent.ACTION_PICK,
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                ),
-                102
-        );
-    }
-
-    @Override
-    protected void onActivityResult(
-            int r,
-            int c,
-            Intent d
-    ) {
-
-        super.onActivityResult(
-                r,
-                c,
-                d
-        );
-
-        if (c != RESULT_OK)
-            return;
-
-        if (
-                r == 101 &&
-                        photoProject != null &&
-                        cameraUri != null
-        ) {
-
-            db.addPhoto(
-                    photoProject.id,
-                    cameraUri.toString()
-            );
-
-            photos(photoProject);
-
-        } else if (
-                r == 102 &&
-                        d != null &&
-                        d.getData() != null &&
-                        photoProject != null
-        ) {
-
-            db.addPhoto(
-                    photoProject.id,
-                    d.getData().toString()
-            );
-
-            photos(photoProject);
-        }
-    }
-
-    // ---------------------------------------------------------
-    // GPS
-    // ---------------------------------------------------------
-
-    void gps(Project p) {
-
-        if (
-                ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                ) != PackageManager.PERMISSION_GRANTED
-        ) {
-
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{
-                            Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
-                    },
-                    100
-            );
-
-            return;
-        }
-
-        LocationManager lm =
-                (LocationManager)
-                        getSystemService(
-                                LOCATION_SERVICE
-                        );
-
-        try {
-
-            Location l =
-                    lm.getLastKnownLocation(
-                            LocationManager.GPS_PROVIDER
-                    );
-
-            if (l == null) {
-
-                l =
-                        lm.getLastKnownLocation(
-                                LocationManager.NETWORK_PROVIDER
-                        );
-            }
-
-            if (l == null) {
-
-                Toast.makeText(
-                        this,
-                        "Turn on GPS",
-                        Toast.LENGTH_LONG
-                ).show();
-
-                return;
-            }
-
-            startActivity(
-                    new Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse(
-                                    "geo:" +
-                                            l.getLatitude() +
-                                            "," +
-                                            l.getLongitude() +
-                                            "?q=" +
-                                            l.getLatitude() +
-                                            "," +
-                                            l.getLongitude()
-                            )
-                    )
-            );
-
-        } catch (Exception e) {
-
-            Toast.makeText(
-                    this,
-                    "Map unavailable",
-                    Toast.LENGTH_LONG
-            ).show();
-        }
-    }
-
-    // ---------------------------------------------------------
-    // PDF
-    // ---------------------------------------------------------
-
-    void pdf(Project p) {
-
-        PdfDocument doc =
-                new PdfDocument();
-
-        try {
-
-            PdfDocument.Page pg =
-                    doc.startPage(
-                            new PdfDocument.PageInfo.Builder(
-                                    595,
-                                    842,
-                                    1
-                            ).create()
-                    );
-
-            Paint paint =
-                    new Paint();
-
-            paint.setTextSize(13);
-
-            float y = 45;
-
-            for (
-                    String line :
-                    projectReport(p)
-                            .split("\n")
-            ) {
-
-                if (y > 800)
-                    break;
-
-                pg.getCanvas()
-                        .drawText(
-                                line,
-                                40,
-                                y,
-                                paint
-                        );
-
-                y += 22;
-            }
-
-            doc.finishPage(pg);
-
-            File dir =
-                    new File(
-                            getExternalFilesDir(
-                                    Environment.DIRECTORY_DOCUMENTS
-                            ),
-                            "EDISON_SOLAR"
-                    );
-
-            if (!dir.exists())
-                dir.mkdirs();
-
-            File f =
-                    new File(
-                            dir,
-                            p.number +
-                                    "_Report.pdf"
-                    );
-
-            FileOutputStream out =
-                    new FileOutputStream(f);
-
-            doc.writeTo(out);
-
-            out.close();
-
-            Uri u =
-                    FileProvider.getUriForFile(
-                            this,
-                            getPackageName() +
-                                    ".fileprovider",
-                            f
-                    );
-
-            Intent i =
-                    new Intent(
-                            Intent.ACTION_SEND
-                    );
-
-            i.setType(
-                    "application/pdf"
-            );
-
-            i.putExtra(
-                    Intent.EXTRA_STREAM,
-                    u
-            );
-
-            i.addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-            );
-
-            startActivity(
-                    Intent.createChooser(
-                            i,
-                            "Share PDF"
-                    )
-            );
-
-        } catch (Exception e) {
-
-            Toast.makeText(
-                    this,
-                    "PDF Error: " +
-                            e.getMessage(),
-                    Toast.LENGTH_LONG
-            ).show();
-
-        } finally {
-
-            doc.close();
-        }
-    }
-
-    // ---------------------------------------------------------
-    // SHARE
-    // ---------------------------------------------------------
-
-    void share(String s) {
-
-        Intent i =
-                new Intent(
-                        Intent.ACTION_SEND
-                );
-
-        i.setType(
-                "text/plain"
-        );
-
-        i.putExtra(
-                Intent.EXTRA_TEXT,
-                s
-        );
-
-        startActivity(
-                Intent.createChooser(
-                        i,
-                        "Share / WhatsApp"
-                )
-        );
-    }
-
-    // ---------------------------------------------------------
-    // CONFIRM
-    // ---------------------------------------------------------
-
-    void confirm(
-            String msg,
-            Runnable yes
-    ) {
-
-        new AlertDialog.Builder(this)
-                .setMessage(msg)
-                .setNegativeButton(
-                        "Cancel",
-                        null
-                )
-                .setPositiveButton(
-                        "OK",
-                        (d, w) -> yes.run()
-                )
-                .show();
-    }
-}
