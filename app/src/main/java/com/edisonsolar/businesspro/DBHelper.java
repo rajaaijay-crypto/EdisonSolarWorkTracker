@@ -865,6 +865,15 @@ public class DBHelper extends SQLiteOpenHelper {
                 (half * worker.dailySalary * 0.5);
     }
 
+    public double monthlyAdvances(int workerId, String month) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=? AND date LIKE ?",
+                new String[]{String.valueOf(workerId), month + "%"});
+        double result = c.moveToFirst() ? c.getDouble(0) : 0;
+        c.close();
+        return result;
+    }
+
     public double salaryBalance(
             Worker worker,
             String month
@@ -877,7 +886,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 );
 
         double advance =
-                advances(worker.id);
+                monthlyAdvances(worker.id, month);
 
         return Math.max(
                 0,
@@ -1071,29 +1080,5 @@ public class DBHelper extends SQLiteOpenHelper {
                 "%.2f",
                 value
         );
-    }
-}
-
-class Worker {
-    int id;
-    String name="", phone="";
-    double dailySalary=0, monthlySalary=0;
-}
-
-class Project {
-    int id, companyId;
-    String number="", company="", customer="", phone="", site="", date="", status="", work="";
-    double kw=0, amount=0, lat=0, lon=0;
-    boolean hasLocation=false;
-
-    static Project from(Cursor c){
-        Project p=new Project();
-        p.id=c.getInt(0); p.companyId=c.getInt(1);
-        p.number=c.getString(2); p.company=c.getString(3);
-        p.customer=c.getString(4); p.phone=c.getString(5); p.site=c.getString(6);
-        p.kw=c.getDouble(7); p.amount=c.getDouble(8); p.date=c.getString(9);
-        p.status=c.getString(10); p.work=c.getString(11);
-        p.lat=c.getDouble(12); p.lon=c.getDouble(13); p.hasLocation=c.getInt(14)!=0;
-        return p;
     }
 }
