@@ -12,7 +12,7 @@ import java.util.Locale;
 public class DBHelper extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "edison_solar_manager.db";
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 4;
 
     public DBHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -102,16 +102,6 @@ public class DBHelper extends SQLiteOpenHelper {
                         "date TEXT," +
                         "note TEXT)"
         );
-
-        db.execSQL(
-                "CREATE TABLE salary_payments (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "worker_id INTEGER NOT NULL," +
-                        "month TEXT NOT NULL," +
-                        "amount REAL DEFAULT 0," +
-                        "paid_date TEXT," +
-                        "note TEXT)"
-        );
     }
 
     @Override
@@ -152,17 +142,7 @@ public class DBHelper extends SQLiteOpenHelper {
                             "note TEXT)"
             );
         }
-    
-
-        if (oldVersion < 5) {
-            db.execSQL("CREATE TABLE IF NOT EXISTS salary_payments (" +
-                    "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                    "worker_id INTEGER NOT NULL," +
-                    "month TEXT NOT NULL," +
-                    "amount REAL DEFAULT 0," +
-                    "paid_date TEXT," +
-                    "note TEXT)");
-        }}
+    }
 
     // =========================================================
     // COMPANY
@@ -1093,29 +1073,3 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 }
-
-class Worker {
-    int id;
-    String name="", phone="";
-    double dailySalary=0, monthlySalary=0;
-}
-
-class Project {
-    int id, companyId;
-    String number="", company="", customer="", phone="", site="", date="", status="", work="";
-    double kw=0, amount=0, lat=0, lon=0;
-    boolean hasLocation=false;
-
-    static Project from(Cursor c){
-        Project p=new Project();
-        p.id=c.getInt(0); p.companyId=c.getInt(1);
-        p.number=c.getString(2); p.company=c.getString(3);
-        p.customer=c.getString(4); p.phone=c.getString(5); p.site=c.getString(6);
-        p.kw=c.getDouble(7); p.amount=c.getDouble(8); p.date=c.getString(9);
-        p.status=c.getString(10); p.work=c.getString(11);
-        p.lat=c.getDouble(12); p.lon=c.getDouble(13); p.hasLocation=c.getInt(14)!=0;
-        return p;
-    }
-}
-
-
