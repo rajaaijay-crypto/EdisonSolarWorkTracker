@@ -19,7 +19,6 @@ class Worker {
 class Project {
     int id;
     int companyId;
-
     String number = "";
     String company = "";
     String customer = "";
@@ -28,17 +27,14 @@ class Project {
     String date = "";
     String status = "";
     String work = "";
-
     double kw = 0;
     double amount = 0;
     double lat = 0;
     double lon = 0;
-
     boolean hasLoc = false;
 
     static Project from(Cursor c) {
         Project p = new Project();
-
         p.id = c.getInt(0);
         p.companyId = c.getInt(1);
         p.number = c.getString(2);
@@ -54,7 +50,8 @@ class Project {
         p.lat = c.getDouble(12);
         p.lon = c.getDouble(13);
         p.hasLoc = c.getInt(14) == 1;
-
         return p;
     }
 }
+
+
