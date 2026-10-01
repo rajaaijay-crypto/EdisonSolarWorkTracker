@@ -1,118 +1,60 @@
 package com.edisonsolar.businesspro;
 
+import android.database.Cursor;
+
 class Company {
-
     int id;
-    String name;
-    String phone;
-
-    Company() {
-        id = 0;
-        name = "";
-        phone = "";
-    }
-}
-
-class Project {
-
-    int id;
-    int companyId;
-
-    String number;
-    String company;
-    String customer;
-    String phone;
-    String site;
-
-    double kw;
-    double amount;
-
-    String date;
-    String status;
-    String work;
-
-    double lat;
-    double lon;
-
-    boolean hasLoc;
-
-    Project() {
-        id = 0;
-        companyId = 0;
-
-        number = "";
-        company = "";
-        customer = "";
-        phone = "";
-        site = "";
-
-        kw = 0;
-        amount = 0;
-
-        date = "";
-        status = "";
-        work = "";
-
-        lat = 0;
-        lon = 0;
-
-        hasLoc = false;
-    }
+    String name = "";
+    String phone = "";
 }
 
 class Worker {
-
     int id;
-    String name;
-    String phone;
-
-    double dailySalary;
-    double monthlySalary;
-
-    Worker() {
-        id = 0;
-        name = "";
-        phone = "";
-        dailySalary = 0;
-        monthlySalary = 0;
-    }
+    String name = "";
+    String phone = "";
+    double dailySalary = 0;
+    double monthlySalary = 0;
 }
 
-class Attendance {
-
+class Project {
     int id;
-    int workerId;
+    int companyId;
 
-    String date;
-    String status;
-    String site;
-    String note;
+    String number = "";
+    String company = "";
+    String customer = "";
+    String phone = "";
+    String site = "";
+    String date = "";
+    String status = "";
+    String work = "";
 
-    Attendance() {
-        id = 0;
-        workerId = 0;
-        date = "";
-        status = "";
-        site = "";
-        note = "";
-    }
-}
+    double kw = 0;
+    double amount = 0;
+    double lat = 0;
+    double lon = 0;
 
-class Advance {
+    boolean hasLoc = false;
 
-    int id;
-    int workerId;
+    static Project from(Cursor c) {
+        Project p = new Project();
 
-    double amount;
+        p.id = c.getInt(0);
+        p.companyId = c.getInt(1);
+        p.number = c.getString(2);
+        p.company = c.getString(3);
+        p.customer = c.getString(4);
+        p.phone = c.getString(5);
+        p.site = c.getString(6);
+        p.kw = c.getDouble(7);
+        p.amount = c.getDouble(8);
+        p.date = c.getString(9);
+        p.status = c.getString(10);
+        p.work = c.getString(11);
+        p.lat = c.getDouble(12);
+        p.lon = c.getDouble(13);
+        p.hasLoc = c.getInt(14) == 1;
 
-    String date;
-    String note;
-
-    Advance() {
-        id = 0;
-        workerId = 0;
-        amount = 0;
-        date = "";
-        note = "";
+        return p;
     }
 }
