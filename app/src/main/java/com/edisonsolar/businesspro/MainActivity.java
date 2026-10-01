@@ -35,8 +35,50 @@ public class MainActivity extends Activity {
     android.database.sqlite.SQLiteDatabase r(){return db.getReadableDatabase();} android.database.sqlite.SQLiteDatabase w(){return db.getWritableDatabase();}
     void confirm(String s,Runnable yes){new AlertDialog.Builder(this).setMessage(s).setNegativeButton("Cancel",null).setPositiveButton("OK",(d,x)->yes.run()).show();}
 
-    void home(){page("EDISON SOLAR MANAGER PRO");ImageView logo=new ImageView(this);int id=getResources().getIdentifier("edison_solar_logo","drawable",getPackageName());if(id!=0)logo.setImageResource(id);logo.setAdjustViewBounds(true);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);root.addView(logo,new LinearLayout.LayoutParams(-1,dp(150)));root.addView(card(dashboardText()));root.addView(button("🏢  Companies",BLUE,v->companies()));root.addView(button("☀️  Projects",BLUE,v->projects()));root.addView(button("👷  Workers / Attendance",PURPLE,v->workers()));root.addView(button("💰  Payment Collection",GREEN,v->payments()));root.addView(button("🧾  Expenses",ORANGE,v->expenses()));root.addView(button("📅  Calendar",PURPLE,v->calendar()));root.addView(button("📊  Reports / PDF",PURPLE,v->reports()));}
-    String dashboardText(){double kw=0,col=0,ex=0;int pc=0;android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(kw),0),COUNT(*),COALESCE(SUM(amount),0) FROM projects",null);if(c.moveToFirst()){kw=c.getDouble(0);pc=c.getInt(1);}c.close();c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM payments",null);if(c.moveToFirst())col=c.getDouble(0);c.close();c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM expenses",null);if(c.moveToFirst())ex=c.getDouble(0);c.close();return "📊 DASHBOARD\nProjects: "+pc+"\nSolar: "+fmt(kw)+" kW\nCollection: ₹"+fmt(col)+"\nExpenses: ₹"+fmt(ex)+"\nNet before site salary: ₹"+fmt(col-ex);}
+    void home(){
+        page("EDISON SOLAR MANAGER PRO");
+
+        ImageView logo=new ImageView(this);
+        int id=getResources().getIdentifier(
+                "edison_solar_logo",
+                "drawable",
+                getPackageName()
+        );
+        if(id!=0) logo.setImageResource(id);
+        logo.setAdjustViewBounds(true);
+        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        root.addView(logo,new LinearLayout.LayoutParams(-1,dp(150)));
+
+        // HOME: ONLY TOTAL PROJECTS + TOTAL SOLAR
+        root.addView(card(dashboardText()));
+
+        root.addView(button("🏢 Companies",BLUE,v->companies()));
+        root.addView(button("☀️ Projects",BLUE,v->projects()));
+        root.addView(button("👷 Workers / Attendance",PURPLE,v->workers()));
+        root.addView(button("💰 Payment Collection",GREEN,v->payments()));
+        root.addView(button("🧾 Expenses",ORANGE,v->expenses()));
+        root.addView(button("📅 Calendar",PURPLE,v->calendar()));
+        root.addView(button("📊 Reports / PDF",PURPLE,v->reports()));
+    }
+
+    String dashboardText(){
+        double kw=0;
+        int pc=0;
+
+        android.database.Cursor c=r().rawQuery(
+                "SELECT COALESCE(SUM(kw),0),COUNT(*) FROM projects",
+                null
+        );
+
+        if(c.moveToFirst()){
+            kw=c.getDouble(0);
+            pc=c.getInt(1);
+        }
+        c.close();
+
+        return "PROJECTS: "+pc+
+                "\nTOTAL SOLAR: "+fmt(kw)+" kW";
+    }
 
     void companies(){page("Companies");root.addView(button("+ Add Company",BLUE,v->companyDialog(0)));android.database.Cursor c=r().rawQuery("SELECT id,name,phone FROM companies ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);String name=safe(c.getString(1)),phone=safe(c.getString(2));root.addView(card(name+"\nPhone: "+phone));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->companyDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete company?",()->{w().delete("companies","id=?",new String[]{""+id});companies();})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
     void companyDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Company Name","");EditText p=field("Phone","");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone FROM companies WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));}c.close();}l.addView(n);l.addView(p);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Company":"Edit Company").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString().trim());cv.put("phone",p.getText().toString().trim());if(id==0)w().insert("companies",null,cv);else w().update("companies",cv,"id=?",new String[]{""+id});d.dismiss();companies();}));d.show();}
@@ -183,7 +225,52 @@ public class MainActivity extends Activity {
         } c.close(); return s.toString();
     }
 
-    void calendar(){page("Calendar / Daily Work");EditText d=field("Date YYYY-MM-DD",iso());root.addView(d);root.addView(button("🔎 View Date",BLUE,v->calendarDate(vText(d))));calendarDate(iso());}
+    void calendar(){
+        page("Calendar / Daily Work");
+
+        Calendar cal=Calendar.getInstance();
+
+        root.addView(button(
+                "📅 Select Date",
+                BLUE,
+                v -> {
+                    DatePickerDialog picker=new DatePickerDialog(
+                            this,
+                            (view,year,month,dayOfMonth) -> {
+                                String date=String.format(
+                                        Locale.getDefault(),
+                                        "%04d-%02d-%02d",
+                                        year,
+                                        month+1,
+                                        dayOfMonth
+                                );
+
+                                // Refresh the page so only the selected date is shown.
+                                calendarSelectedDate(date);
+                            },
+                            cal.get(Calendar.YEAR),
+                            cal.get(Calendar.MONTH),
+                            cal.get(Calendar.DAY_OF_MONTH)
+                    );
+                    picker.show();
+                }
+        ));
+
+        calendarSelectedDate(iso());
+    }
+
+    void calendarSelectedDate(String date){
+        page("Calendar / Daily Work");
+
+        root.addView(button(
+                "📅 Change Date",
+                BLUE,
+                v -> calendar()
+        ));
+
+        calendarDate(date);
+    }
+
     void calendarDate(String date){root.addView(txt("DATE: "+date,21,true));android.database.Cursor c=r().rawQuery("SELECT a.status,a.site,w.name FROM attendance a LEFT JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY w.name",new String[]{date});boolean f=false;while(c.moveToNext()){f=true;root.addView(card("👷 "+safe(c.getString(2))+"\nStatus: "+safe(c.getString(0))+"\nSite: "+safe(c.getString(1))));}c.close();if(!f)root.addView(card("No attendance for this date."));}
     void reports(){page("Reports / PDF");root.addView(card(dashboardText()));root.addView(button("📄 All Projects PDF",PURPLE,v->createPdf("Projects",allProjectsText())));root.addView(button("📱 Share Project Summary",GREEN,v->share(allProjectsText())));root.addView(button("💰 Salary Report",BLUE,v->salaryReport(iso().substring(0,7))));}
     String allProjectsText(){StringBuilder s=new StringBuilder();for(Project p:projectList())s.append(projectReport(p)).append("\n----------------\n");return s.toString();}
