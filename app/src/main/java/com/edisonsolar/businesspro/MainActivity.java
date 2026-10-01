@@ -45,12 +45,64 @@ public class MainActivity extends Activity {
     void projects(){page("Projects");root.addView(button("+ Add Project",BLUE,v->projectDialog(0)));for(Project p:projectList()){root.addView(card(projectSummary(p)));root.addView(button("📊 Full Project Report",BLUE,v->projectFullReport(p)));root.addView(button("✏️ Edit / Manage",PURPLE,v->projectMenu(p)));}}
     String projectSummary(Project p){double col=sum("payments",p.id),ex=sum("expenses",p.id),sal=projectSalary(p);return "☀️ PROJECT: "+p.number+"\nCustomer: "+safe(p.customer)+"\nCompany: "+safe(p.company)+"\nSite: "+safe(p.site)+"\n⚡ Solar: "+fmt(p.kw)+" kW\n💰 Collection: ₹"+fmt(col)+"\n💸 Expenses: ₹"+fmt(ex)+"\n👷 Work Days: "+projectDays(p)+"\n👷 Site Salary: ₹"+fmt(sal)+"\n📊 Profit: ₹"+fmt(col-ex-sal)+"\n🔴 Pending: ₹"+fmt(Math.max(0,p.amount-col))+"\n📅 Date: "+safe(p.date);}
     double sum(String table,int pid){android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM "+table+" WHERE project_id=?",new String[]{""+pid});double x=c.moveToFirst()?c.getDouble(0):0;c.close();return x;}
-    int projectDays(Project p){android.database.Cursor c=r().rawQuery("SELECT COUNT(DISTINCT date) FROM attendance WHERE status='Present' AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});int x=c.moveToFirst()?c.getInt(0):0;c.close();return x;}
-    double projectSalary(Project p){double x=0;android.database.Cursor c=r().rawQuery("SELECT worker_id,COUNT(*) FROM attendance WHERE status='Present' AND (site=? OR site LIKE ? OR site LIKE ?) GROUP BY worker_id",new String[]{p.site,p.number+"%","%"+p.number+"%"});while(c.moveToNext()){android.database.Cursor q=r().rawQuery("SELECT daily_salary FROM workers WHERE id=?",new String[]{""+c.getInt(0)});if(q.moveToFirst())x+=q.getDouble(0)*c.getInt(1);q.close();}c.close();return x;}
+    int projectDays(Project p){android.database.Cursor c=r().rawQuery("SELECT COUNT(DISTINCT date) FROM attendance WHERE status IN ('Present','Half Day') AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});int x=c.moveToFirst()?c.getInt(0):0;c.close();return x;}
+    double projectSalary(Project p){double x=0;android.database.Cursor c=r().rawQuery("SELECT worker_id,status FROM attendance WHERE status IN ('Present','Half Day') AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});while(c.moveToNext()){android.database.Cursor q=r().rawQuery("SELECT daily_salary FROM workers WHERE id=?",new String[]{""+c.getInt(0)});if(q.moveToFirst()){double daily=q.getDouble(0);x+="Half Day".equalsIgnoreCase(c.getString(1))?daily*0.5:daily;}q.close();}c.close();return x;}
     void projectDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);String[] v={"","","","","0","0",today(),"Pending",""};if(id>0){android.database.Cursor c=r().rawQuery("SELECT company,customer,phone,site,kw,amount,date,status,work FROM projects WHERE id=?",new String[]{""+id});if(c.moveToFirst())for(int i=0;i<9;i++)v[i]=safe(c.getString(i));c.close();}EditText co=field("Company",v[0]),cu=field("Customer",v[1]),ph=field("Phone",v[2]),si=field("Site",v[3]),kw=field("Solar kW",v[4]),am=field("Project Amount",v[5]),da=field("Date",v[6]),st=field("Status",v[7]),wo=field("Work Detail",v[8]);l.addView(co);l.addView(cu);l.addView(ph);l.addView(si);l.addView(kw);l.addView(am);l.addView(da);l.addView(st);l.addView(wo);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Project":"Edit Project").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(b->{if(cu.getText().toString().trim().isEmpty()){cu.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("company",co.getText().toString());cv.put("customer",cu.getText().toString());cv.put("phone",ph.getText().toString());cv.put("site",si.getText().toString());cv.put("kw",num(kw.getText().toString()));cv.put("amount",num(am.getText().toString()));cv.put("date",da.getText().toString());cv.put("status",st.getText().toString());cv.put("work",wo.getText().toString());if(id==0){long nid=w().insert("projects",null,cv);ContentValues n=new ContentValues();n.put("number",String.format(Locale.US,"ES-%04d",nid));w().update("projects",n,"id=?",new String[]{""+nid});}else w().update("projects",cv,"id=?",new String[]{""+id});d.dismiss();projects();}));d.show();}
     void projectMenu(Project p){String[] a={"✏️ Edit Project","💰 Payments","🧾 Expenses","📷 Photos","📍 GPS / Map","📄 PDF","📱 Share / WhatsApp","🗑 Delete"};new AlertDialog.Builder(this).setTitle(p.customer).setItems(a,(d,i)->{if(i==0)projectDialog(p.id);else if(i==1)projectPayments(p);else if(i==2)projectExpenses(p);else if(i==3)photos(p);else if(i==4)gps(p);else if(i==5)pdf(p);else if(i==6)share(projectReport(p));else confirm("Delete project?",()->{w().delete("projects","id=?",new String[]{""+p.id});projects();});}).show();}
 
     void projectFullReport(Project p){page("Project Report");root.addView(card(projectSummary(p)));root.addView(txt("💰 Collection History",20,true));showPayments(p);root.addView(txt("💸 Expense History",20,true));showExpenses(p);root.addView(txt("👷 Workers / Salary",20,true));showProjectWorkers(p);root.addView(button("📄 Generate Project PDF",PURPLE,v->pdf(p)));root.addView(button("📱 Share Project Report",GREEN,v->share(projectReport(p))));}
+
+    void showProjectWorkers(Project p){
+        android.database.Cursor c = r().rawQuery(
+                "SELECT a.worker_id," +
+                "SUM(CASE WHEN a.status='Present' THEN 1 ELSE 0 END)," +
+                "SUM(CASE WHEN a.status='Half Day' THEN 1 ELSE 0 END)," +
+                "SUM(CASE WHEN a.status='Absent' THEN 1 ELSE 0 END) " +
+                "FROM attendance a " +
+                "WHERE a.status IN ('Present','Half Day','Absent') " +
+                "AND (a.site=? OR a.site LIKE ? OR a.site LIKE ?) " +
+                "GROUP BY a.worker_id",
+                new String[]{p.site,p.number+"%","%"+p.number+"%"});
+
+        if(!c.moveToFirst()){
+            root.addView(card("No worker attendance for this project."));
+            c.close();
+            return;
+        }
+
+        do{
+            int wid = c.getInt(0);
+            int present = c.getInt(1);
+            int halfDay = c.getInt(2);
+            int absent = c.getInt(3);
+
+            String name = "Worker";
+            double dailySalary = 0;
+
+            android.database.Cursor q = r().rawQuery(
+                    "SELECT name,daily_salary FROM workers WHERE id=?",
+                    new String[]{""+wid});
+
+            if(q.moveToFirst()){
+                name = safe(q.getString(0));
+                dailySalary = q.getDouble(1);
+            }
+            q.close();
+
+            double salary = (present * dailySalary) + (halfDay * dailySalary * 0.5);
+
+            root.addView(card(
+                    "👷 " + name +
+                    "\nPresent: " + present +
+                    "\nHalf Day: " + halfDay +
+                    "\nAbsent: " + absent +
+                    "\nSalary: ₹" + fmt(salary)
+            ));
+        }while(c.moveToNext());
+
+        c.close();
+    }
+
     String projectReport(Project p){StringBuilder s=new StringBuilder("EDISON SOLAR MANAGER PRO\n\n");s.append(projectSummary(p)).append("\n\nCOLLECTION HISTORY\n");android.database.Cursor c=r().rawQuery("SELECT date,amount,mode,note FROM payments WHERE project_id=? ORDER BY date,id",new String[]{""+p.id});while(c.moveToNext())s.append(c.getString(0)).append(" | ₹").append(fmt(c.getDouble(1))).append(" | ").append(safe(c.getString(2))).append("\n");c.close();s.append("\nEXPENSE HISTORY\n");c=r().rawQuery("SELECT date,category,amount,note FROM expenses WHERE project_id=? ORDER BY date,id",new String[]{""+p.id});while(c.moveToNext())s.append(c.getString(0)).append(" | ").append(safe(c.getString(1))).append(" | ₹").append(fmt(c.getDouble(2))).append("\n");c.close();return s.toString();}
 
     void payments(){page("Payment Collection");for(Project p:projectList()){root.addView(card(projectSummary(p)));root.addView(button("💰 Add / Edit Collection",GREEN,v->projectPayments(p)));}}
