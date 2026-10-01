@@ -865,15 +865,6 @@ public class DBHelper extends SQLiteOpenHelper {
                 (half * worker.dailySalary * 0.5);
     }
 
-    public double monthlyAdvances(int workerId, String month) {
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=? AND date LIKE ?",
-                new String[]{String.valueOf(workerId), month + "%"});
-        double result = c.moveToFirst() ? c.getDouble(0) : 0;
-        c.close();
-        return result;
-    }
-
     public double salaryBalance(
             Worker worker,
             String month
@@ -886,7 +877,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 );
 
         double advance =
-                monthlyAdvances(worker.id, month);
+                advances(worker.id);
 
         return Math.max(
                 0,
