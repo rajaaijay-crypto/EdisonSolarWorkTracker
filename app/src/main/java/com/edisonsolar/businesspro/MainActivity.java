@@ -35,50 +35,8 @@ public class MainActivity extends Activity {
     android.database.sqlite.SQLiteDatabase r(){return db.getReadableDatabase();} android.database.sqlite.SQLiteDatabase w(){return db.getWritableDatabase();}
     void confirm(String s,Runnable yes){new AlertDialog.Builder(this).setMessage(s).setNegativeButton("Cancel",null).setPositiveButton("OK",(d,x)->yes.run()).show();}
 
-    void home(){
-        page("EDISON SOLAR MANAGER PRO");
-
-        ImageView logo=new ImageView(this);
-        int id=getResources().getIdentifier(
-                "edison_solar_logo",
-                "drawable",
-                getPackageName()
-        );
-        if(id!=0) logo.setImageResource(id);
-        logo.setAdjustViewBounds(true);
-        logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        root.addView(logo,new LinearLayout.LayoutParams(-1,dp(150)));
-
-        // HOME: ONLY TOTAL PROJECTS + TOTAL SOLAR
-        root.addView(card(dashboardText()));
-
-        root.addView(button("🏢 Companies",BLUE,v->companies()));
-        root.addView(button("☀️ Projects",BLUE,v->projects()));
-        root.addView(button("👷 Workers / Attendance",PURPLE,v->workers()));
-        root.addView(button("💰 Payment Collection",GREEN,v->payments()));
-        root.addView(button("🧾 Expenses",ORANGE,v->expenses()));
-        root.addView(button("📅 Calendar",PURPLE,v->calendar()));
-        root.addView(button("📊 Reports / PDF",PURPLE,v->reports()));
-    }
-
-    String dashboardText(){
-        double kw=0;
-        int pc=0;
-
-        android.database.Cursor c=r().rawQuery(
-                "SELECT COALESCE(SUM(kw),0),COUNT(*) FROM projects",
-                null
-        );
-
-        if(c.moveToFirst()){
-            kw=c.getDouble(0);
-            pc=c.getInt(1);
-        }
-        c.close();
-
-        return "PROJECTS: "+pc+
-                "\nTOTAL SOLAR: "+fmt(kw)+" kW";
-    }
+    void home(){page("EDISON SOLAR MANAGER PRO");ImageView logo=new ImageView(this);int id=getResources().getIdentifier("edison_solar_logo","drawable",getPackageName());if(id!=0)logo.setImageResource(id);logo.setAdjustViewBounds(true);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);root.addView(logo,new LinearLayout.LayoutParams(-1,dp(150)));root.addView(card(dashboardText()));root.addView(button("🏢  Companies",BLUE,v->companies()));root.addView(button("☀️  Projects",BLUE,v->projects()));root.addView(button("👷  Workers / Attendance",PURPLE,v->workers()));root.addView(button("💰  Payment Collection",GREEN,v->payments()));root.addView(button("🧾  Expenses",ORANGE,v->expenses()));root.addView(button("📅  Calendar",PURPLE,v->calendar()));root.addView(button("📊  Reports / PDF",PURPLE,v->reports()));}
+    String dashboardText(){double kw=0,col=0,ex=0;int pc=0;android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(kw),0),COUNT(*),COALESCE(SUM(amount),0) FROM projects",null);if(c.moveToFirst()){kw=c.getDouble(0);pc=c.getInt(1);}c.close();c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM payments",null);if(c.moveToFirst())col=c.getDouble(0);c.close();c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM expenses",null);if(c.moveToFirst())ex=c.getDouble(0);c.close();return "📊 DASHBOARD\nProjects: "+pc+"\nSolar: "+fmt(kw)+" kW\nCollection: ₹"+fmt(col)+"\nExpenses: ₹"+fmt(ex)+"\nNet before site salary: ₹"+fmt(col-ex);}
 
     void companies(){page("Companies");root.addView(button("+ Add Company",BLUE,v->companyDialog(0)));android.database.Cursor c=r().rawQuery("SELECT id,name,phone FROM companies ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);String name=safe(c.getString(1)),phone=safe(c.getString(2));root.addView(card(name+"\nPhone: "+phone));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->companyDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete company?",()->{w().delete("companies","id=?",new String[]{""+id});companies();})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
     void companyDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Company Name","");EditText p=field("Phone","");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone FROM companies WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));}c.close();}l.addView(n);l.addView(p);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Company":"Edit Company").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString().trim());cv.put("phone",p.getText().toString().trim());if(id==0)w().insert("companies",null,cv);else w().update("companies",cv,"id=?",new String[]{""+id});d.dismiss();companies();}));d.show();}
@@ -157,8 +115,56 @@ public class MainActivity extends Activity {
     void showExpenses(Project p){android.database.Cursor c=r().rawQuery("SELECT id,date,category,amount,note FROM expenses WHERE project_id=? ORDER BY date DESC,id DESC",new String[]{""+p.id});while(c.moveToNext()){int id=c.getInt(0);root.addView(card("📅 "+c.getString(1)+"\n📂 "+safe(c.getString(2))+"\n💸 ₹"+fmt(c.getDouble(3))+"\n"+safe(c.getString(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->expenseDialog(p,id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete expense?",()->{w().delete("expenses","id=?",new String[]{""+id});projectExpenses(p);})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
     void expenseDialog(Project selected,int id){ArrayList<Project> ps=projectList();LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner sp=new Spinner(this);ArrayList<String> names=new ArrayList<>();names.add("Select Project / Site");for(Project p:ps)names.add(p.number+" • "+p.customer);sp.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));EditText am=field("Expense Amount ₹",""),da=field("Date YYYY-MM-DD",iso()),no=field("Note","");Spinner type=new Spinner(this);String[] types={"Other","Material","Labour","Tea","Lunch","Transportation","Fuel","Tools","Travel","Site Expense"};type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,types));if(id>0){android.database.Cursor c=r().rawQuery("SELECT project_id,amount,category,date,note FROM expenses WHERE id=?",new String[]{""+id});if(c.moveToFirst()){int pid=c.getInt(0);for(int i=0;i<ps.size();i++)if(ps.get(i).id==pid)sp.setSelection(i+1);am.setText(c.getString(1));da.setText(c.getString(3));no.setText(safe(c.getString(4)));for(int i=0;i<types.length;i++)if(types[i].equalsIgnoreCase(safe(c.getString(2))))type.setSelection(i);}c.close();}else if(selected!=null)for(int i=0;i<ps.size();i++)if(ps.get(i).id==selected.id)sp.setSelection(i+1);l.addView(sp);l.addView(am);l.addView(type);l.addView(da);l.addView(no);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Expense":"Edit Expense").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(sp.getSelectedItemPosition()<=0){Toast.makeText(this,"Select Project",Toast.LENGTH_SHORT).show();return;}double value=num(am.getText().toString());if(value<=0){am.setError("Enter amount");return;}int pid=ps.get(sp.getSelectedItemPosition()-1).id;ContentValues cv=new ContentValues();cv.put("project_id",pid);cv.put("amount",value);cv.put("category",type.getSelectedItem().toString());cv.put("date",da.getText().toString());cv.put("note",no.getText().toString());if(id==0)w().insert("expenses",null,cv);else w().update("expenses",cv,"id=?",new String[]{""+id});d.dismiss();if(selected!=null)projectExpenses(selected);else expenses();}));d.show();}
 
-    void workers(){page("Workers / Attendance");root.addView(button("+ Add Worker",PURPLE,v->workerDialog(0)));root.addView(button("📅 Attendance",BLUE,v->attendance(iso())));root.addView(button("💰 Salary / Advance",GREEN,v->salaryReport(iso().substring(0,7))));android.database.Cursor c=r().rawQuery("SELECT id,name,phone,daily_salary,monthly_salary FROM workers ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);root.addView(card("👷 "+c.getString(1)+"\nPhone: "+safe(c.getString(2))+"\nDaily: ₹"+fmt(c.getDouble(3))+"\nMonthly: ₹"+fmt(c.getDouble(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->workerDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete worker?",()->{w().delete("workers","id=?",new String[]{""+id});workers();})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
-    void workerDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Worker Name",""),p=field("Phone",""),d=field("Daily Salary ₹","0"),m=field("Monthly Salary ₹","0");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));d.setText(c.getString(2));m.setText(c.getString(3));}c.close();}l.addView(n);l.addView(p);l.addView(d);l.addView(m);AlertDialog x=new AlertDialog.Builder(this).setTitle(id==0?"Add Worker":"Edit Worker").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();x.setOnShowListener(q->x.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString());cv.put("phone",p.getText().toString());cv.put("daily_salary",num(d.getText().toString()));cv.put("monthly_salary",num(m.getText().toString()));if(id==0)w().insert("workers",null,cv);else w().update("workers",cv,"id=?",new String[]{""+id});x.dismiss();workers();}));x.show();}
+    void workers(){
+ page("Workers / Attendance");
+ root.addView(button("+ Add Worker",PURPLE,v->workerDialog(0)));
+ root.addView(button(" Attendance",BLUE,v->attendance(iso())));
+ EditText mf=field("Select Month YYYY-MM",iso().substring(0,7));
+ root.addView(mf);
+ root.addView(button(" Open Month",GREEN,v->workersMonthly(vText(mf))));
+ root.addView(txt("MONTHLY WORKER DETAILS",20,true));
+ workersMonthlyCards(iso().substring(0,7));
+ android.database.Cursor c=r().rawQuery("SELECT id,name,phone,daily_salary,monthly_salary FROM workers ORDER BY name",null);
+ while(c.moveToNext()){
+  int id=c.getInt(0);
+  root.addView(card(" "+c.getString(1)+"\nPhone: "+safe(c.getString(2))+"\nDaily: ₹"+fmt(c.getDouble(3))+"\nMonthly: ₹"+fmt(c.getDouble(4))));
+  LinearLayout row=new LinearLayout(this);
+  row.addView(button(" Edit",BLUE,v->workerDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));
+  row.addView(button(" Delete",RED,v->confirm("Delete worker?",()->{w().delete("workers","id=?",new String[]{""+id});workers();})),new LinearLayout.LayoutParams(0,dp(62),1));
+  root.addView(row);
+ }
+ c.close();
+}
+ void workersMonthly(String month){
+ page("Workers • Monthly Salary");
+ EditText mf=field("Select Month YYYY-MM",month);
+ root.addView(mf);
+ root.addView(button(" Open Month",GREEN,v->workersMonthly(vText(mf))));
+ root.addView(txt("MONTH: "+month,21,true));
+ workersMonthlyCards(month);
+ root.addView(button(" Salary / Advance Report",BLUE,v->salaryReport(month)));
+}
+ void workersMonthlyCards(String month){
+ double totalSalary=0,totalAdvance=0;
+ int totalWorkers=0;
+ android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);
+ while(c.moveToNext()){
+  totalWorkers++;
+  int id=c.getInt(0); String name=safe(c.getString(1));
+  double daily=c.getDouble(2), monthly=c.getDouble(3);
+  int present=countAtt(id,month,"Present");
+  int half=countAtt(id,month,"Half Day");
+  int absent=countAtt(id,month,"Absent");
+  double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);
+  double advance=sumAdvance(id,month);
+  totalSalary+=salary; totalAdvance+=advance;
+  root.addView(card(" "+name+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nGross Salary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending Balance: ₹"+fmt(salary-advance)));
+  root.addView(button(" Payment / Advance History",BLUE,v->workerHistory(id,month)));
+ }
+ c.close();
+ root.addView(card("TOTAL WORKERS: "+totalWorkers+"\nTOTAL SALARY: ₹"+fmt(totalSalary)+"\nTOTAL ADVANCE: ₹"+fmt(totalAdvance)+"\nTOTAL PENDING: ₹"+fmt(totalSalary-totalAdvance)));
+}
+ void workerDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Worker Name",""),p=field("Phone",""),d=field("Daily Salary ₹","0"),m=field("Monthly Salary ₹","0");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));d.setText(c.getString(2));m.setText(c.getString(3));}c.close();}l.addView(n);l.addView(p);l.addView(d);l.addView(m);AlertDialog x=new AlertDialog.Builder(this).setTitle(id==0?"Add Worker":"Edit Worker").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();x.setOnShowListener(q->x.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString());cv.put("phone",p.getText().toString());cv.put("daily_salary",num(d.getText().toString()));cv.put("monthly_salary",num(m.getText().toString()));if(id==0)w().insert("workers",null,cv);else w().update("workers",cv,"id=?",new String[]{""+id});x.dismiss();workers();}));x.show();}
 
     void attendance(String date){page("Attendance • "+date);EditText df=field("Date YYYY-MM-DD",date);root.addView(df);root.addView(button("🔄 Open Date",BLUE,v->attendance(df.getText().toString().trim())));root.addView(button("+ Add Attendance",PURPLE,v->attendanceDialog(date,0)));android.database.Cursor c=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);while(c.moveToNext()){int wid=c.getInt(0);String name=c.getString(1);android.database.Cursor q=r().rawQuery("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});String st="Not marked",site="",note="";int aid=0;if(q.moveToFirst()){aid=q.getInt(0);st=safe(q.getString(1));site=safe(q.getString(2));note=safe(q.getString(3));}q.close();root.addView(card("👷 "+name+"\nStatus: "+st+"\nSite: "+site+(note.isEmpty()?"":"\n"+note)));final int fwid=wid;root.addView(button("✏️ Edit Attendance",BLUE,v->attendanceDialog(date,fwid)));}c.close();}
     void attendanceDialog(String date,int wid){android.database.Cursor wc=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);ArrayList<Integer> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>();while(wc.moveToNext()){ids.add(wc.getInt(0));names.add(wc.getString(1));}wc.close();if(names.isEmpty()){Toast.makeText(this,"Add worker first",Toast.LENGTH_SHORT).show();return;}LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner ws=new Spinner(this);ws.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));Spinner ss=new Spinner(this);ss.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Present","Half Day","Absent"}));EditText site=field("Project / Site",""),note=field("Note","");for(int i=0;i<ids.size();i++)if(ids.get(i)==wid)ws.setSelection(i);if(wid>0){android.database.Cursor c=r().rawQuery("SELECT status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});if(c.moveToFirst()){String oldStatus=safe(c.getString(0)); if("Half Day".equalsIgnoreCase(oldStatus)) ss.setSelection(1); else if("Absent".equalsIgnoreCase(oldStatus)) ss.setSelection(2); else ss.setSelection(0);site.setText(safe(c.getString(1)));note.setText(safe(c.getString(2)));}c.close();}l.addView(ws);l.addView(ss);l.addView(site);l.addView(note);AlertDialog d=new AlertDialog.Builder(this).setTitle("Attendance • "+date).setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{int worker=ids.get(ws.getSelectedItemPosition());ContentValues cv=new ContentValues();cv.put("worker_id",worker);cv.put("date",date);cv.put("status",ss.getSelectedItem().toString());cv.put("site",site.getText().toString());cv.put("note",note.getText().toString());long exists=0;android.database.Cursor c=r().rawQuery("SELECT id FROM attendance WHERE worker_id=? AND date=?",new String[]{""+worker,date});if(c.moveToFirst())exists=c.getLong(0);c.close();if(exists==0)w().insert("attendance",null,cv);else w().update("attendance",cv,"id=?",new String[]{""+exists});d.dismiss();attendance(date); }));d.show();}
@@ -225,52 +231,7 @@ public class MainActivity extends Activity {
         } c.close(); return s.toString();
     }
 
-    void calendar(){
-        page("Calendar / Daily Work");
-
-        Calendar cal=Calendar.getInstance();
-
-        root.addView(button(
-                "📅 Select Date",
-                BLUE,
-                v -> {
-                    DatePickerDialog picker=new DatePickerDialog(
-                            this,
-                            (view,year,month,dayOfMonth) -> {
-                                String date=String.format(
-                                        Locale.getDefault(),
-                                        "%04d-%02d-%02d",
-                                        year,
-                                        month+1,
-                                        dayOfMonth
-                                );
-
-                                // Refresh the page so only the selected date is shown.
-                                calendarSelectedDate(date);
-                            },
-                            cal.get(Calendar.YEAR),
-                            cal.get(Calendar.MONTH),
-                            cal.get(Calendar.DAY_OF_MONTH)
-                    );
-                    picker.show();
-                }
-        ));
-
-        calendarSelectedDate(iso());
-    }
-
-    void calendarSelectedDate(String date){
-        page("Calendar / Daily Work");
-
-        root.addView(button(
-                "📅 Change Date",
-                BLUE,
-                v -> calendar()
-        ));
-
-        calendarDate(date);
-    }
-
+    void calendar(){page("Calendar / Daily Work");EditText d=field("Date YYYY-MM-DD",iso());root.addView(d);root.addView(button("🔎 View Date",BLUE,v->calendarDate(vText(d))));calendarDate(iso());}
     void calendarDate(String date){root.addView(txt("DATE: "+date,21,true));android.database.Cursor c=r().rawQuery("SELECT a.status,a.site,w.name FROM attendance a LEFT JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY w.name",new String[]{date});boolean f=false;while(c.moveToNext()){f=true;root.addView(card("👷 "+safe(c.getString(2))+"\nStatus: "+safe(c.getString(0))+"\nSite: "+safe(c.getString(1))));}c.close();if(!f)root.addView(card("No attendance for this date."));}
     void reports(){page("Reports / PDF");root.addView(card(dashboardText()));root.addView(button("📄 All Projects PDF",PURPLE,v->createPdf("Projects",allProjectsText())));root.addView(button("📱 Share Project Summary",GREEN,v->share(allProjectsText())));root.addView(button("💰 Salary Report",BLUE,v->salaryReport(iso().substring(0,7))));}
     String allProjectsText(){StringBuilder s=new StringBuilder();for(Project p:projectList())s.append(projectReport(p)).append("\n----------------\n");return s.toString();}
