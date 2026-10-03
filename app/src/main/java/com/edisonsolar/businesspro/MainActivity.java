@@ -36,55 +36,19 @@ public class MainActivity extends Activity {
     void confirm(String s,Runnable yes){new AlertDialog.Builder(this).setMessage(s).setNegativeButton("Cancel",null).setPositiveButton("OK",(d,x)->yes.run()).show();}
 
     void home(){page("EDISON SOLAR MANAGER PRO");ImageView logo=new ImageView(this);int id=getResources().getIdentifier("edison_solar_logo","drawable",getPackageName());if(id!=0)logo.setImageResource(id);logo.setAdjustViewBounds(true);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);root.addView(logo,new LinearLayout.LayoutParams(-1,dp(150)));root.addView(card(dashboardText()));root.addView(button("🏢  Companies",BLUE,v->companies()));root.addView(button("☀️  Projects",BLUE,v->projects()));root.addView(button("👷  Workers / Attendance",PURPLE,v->workers()));root.addView(button("💰  Payment Collection",GREEN,v->payments()));root.addView(button("🧾  Expenses",ORANGE,v->expenses()));root.addView(button("📅  Calendar",PURPLE,v->calendar()));root.addView(button("📊  Reports / PDF",PURPLE,v->reports()));}
-    String dashboardText(){
-    double kw=0; int pc=0;
-    android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(kw),0),COUNT(*) FROM projects",null);
-    if(c.moveToFirst()){kw=c.getDouble(0);pc=c.getInt(1);} c.close();
-    return "📊 DASHBOARD\nTotal Projects: "+pc+"\nTotal Solar: "+fmt(kw)+" kW";
-}
-
+String dashboardText(){double kw=0;int pc=0;android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(kw),0),COUNT(*) FROM projects",null);if(c.moveToFirst()){kw=c.getDouble(0);pc=c.getInt(1);}c.close();return "📊 DASHBOARD\nTotal Projects: "+pc+"\nTotal Solar: "+fmt(kw)+" kW";}
 
     void companies(){page("Companies");root.addView(button("+ Add Company",BLUE,v->companyDialog(0)));android.database.Cursor c=r().rawQuery("SELECT id,name,phone FROM companies ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);String name=safe(c.getString(1)),phone=safe(c.getString(2));root.addView(card(name+"\nPhone: "+phone));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->companyDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete company?",()->{w().delete("companies","id=?",new String[]{""+id});companies();})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
     void companyDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Company Name","");EditText p=field("Phone","");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone FROM companies WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));}c.close();}l.addView(n);l.addView(p);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Company":"Edit Company").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString().trim());cv.put("phone",p.getText().toString().trim());if(id==0)w().insert("companies",null,cv);else w().update("companies",cv,"id=?",new String[]{""+id});d.dismiss();companies();}));d.show();}
 
     ArrayList<Project> projectList(){return db.projects();}
-    interface MonthCallback{void onMonth(String month);}
-    String monthOfDate(String date){
-        if(date==null)return "";
-        String d=date.trim();
-        if(d.matches("\\d{4}-\\d{2}-\\d{2}"))return d.substring(0,7);
-        if(d.matches("\\d{2}-\\d{2}-\\d{4}"))return d.substring(6,10)+"-"+d.substring(3,5);
-        return "";
-    }
-    String currentMonth(){return iso().substring(0,7);}
-    void monthPicker(String current,MonthCallback done){
-        try{
-            String[] a=current.split("-");
-            int y=Integer.parseInt(a[0]),m=Integer.parseInt(a[1])-1;
-            DatePickerDialog p=new DatePickerDialog(this,(v,yy,mm,dd)->
-                done.onMonth(String.format(Locale.US,"%04d-%02d",yy,mm+1)),y,m,1);
-            p.show();
-        }catch(Exception e){Toast.makeText(this,"Month select error",Toast.LENGTH_SHORT).show();}
-    }
-    boolean projectInMonth(Project p,String month){return month.equals(monthOfDate(p.date));}
-    void projects(){projects(currentMonth());}
-void projects(String month){
-    page("Projects");
-    root.addView(button("📅 Select Month: "+month,BLUE,v->monthPicker(month,m->projects(m))));
-    root.addView(button("+ Add Project",PURPLE,v->projectDialog(0)));
-    double totalKw=0;int totalProjects=0;
-    for(Project p:projectList()){
-        if(!projectInMonth(p,month))continue;
-        totalProjects++;totalKw+=p.kw;
-        root.addView(card(projectSummary(p)));
-        root.addView(button("📊 Full Project Report",BLUE,v->projectFullReport(p)));
-        root.addView(button("✏️ Edit / Manage",PURPLE,v->projectMenu(p)));
-    }
-    root.addView(card("MONTH TOTAL • "+month+"\nTotal Projects: "+totalProjects+
-        "\nTotal Solar: "+fmt(totalKw)+" kW"));
-}
-
-    String projectSummary(Project p){double col=sum("payments",p.id),ex=sum("expenses",p.id),sal=projectSalary(p);return "☀️ PROJECT: "+p.number+"\nCustomer: "+safe(p.customer)+"\nCompany: "+safe(p.company)+"\nSite: "+safe(p.site)+"\n⚡ Solar: "+fmt(p.kw)+" kW\n💰 Collection: ₹"+fmt(col)+"\n💸 Expenses: ₹"+fmt(ex)+"\n👷 Work Days: "+projectDays(p)+"\n👷 Site Salary: ₹"+fmt(sal)+"\n📊 Profit: ₹"+fmt(col-ex-sal)+"\n🔴 Pending: ₹"+fmt(Math.max(0,p.amount-col))+"\n📅 Date: "+safe(p.date);}
+    void projects(){projects(iso().substring(0,7));}
+void projects(String month){page("Projects");root.addView(button("+ Add Project",BLUE,v->projectDialog(0)));root.addView(txt("SELECT MONTH",19,true));root.addView(button("📅  Select Month: "+month,BLUE,v->monthPicker(month,m->projects(m))));double totalKw=0;int totalProjects=0;for(Project p:projectList()){if(!projectInMonth(p,month))continue;totalProjects++;totalKw+=p.kw;root.addView(card(projectSummary(p)));root.addView(button("📊 Full Project Report",BLUE,v->projectFullReport(p)));root.addView(button("✏️ Edit / Manage",PURPLE,v->projectMenu(p)));}root.addView(card("MONTH TOTAL\nProjects: "+totalProjects+"\nSolar: "+fmt(totalKw)+" kW"));}
+boolean projectInMonth(Project p,String month){String d=safe(p.date);if(d.matches("\\d{4}-\\d{2}-\\d{2}"))return d.startsWith(month);if(d.matches("\\d{2}-\\d{2}-\\d{4}"))return d.substring(6,10).equals(month.substring(0,4))&&d.substring(3,5).equals(month.substring(5,7));return false;}
+void monthPicker(String current,final MonthResult result){String[] parts=current.split("-");int year=parts.length>0?numInt(parts[0]):Calendar.getInstance().get(Calendar.YEAR);int month=parts.length>1?numInt(parts[1])-1:Calendar.getInstance().get(Calendar.MONTH);LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);NumberPicker mp=new NumberPicker(this);mp.setMinValue(1);mp.setMaxValue(12);mp.setValue(month+1);NumberPicker yp=new NumberPicker(this);yp.setMinValue(2020);yp.setMaxValue(2100);yp.setValue(year);l.addView(mp,new LinearLayout.LayoutParams(0,dp(90),1));l.addView(yp,new LinearLayout.LayoutParams(0,dp(90),1));new AlertDialog.Builder(this).setTitle("Select Month").setView(l).setNegativeButton("Cancel",null).setPositiveButton("OK",(d,w)->result.onMonth(String.format(Locale.US,"%04d-%02d",yp.getValue(),mp.getValue()))).show();}
+interface MonthResult{void onMonth(String month);}
+int numInt(String s){try{return Integer.parseInt(s);}catch(Exception e){return 0;}}
+String projectSummary(Project p){double col=sum("payments",p.id),ex=sum("expenses",p.id),sal=projectSalary(p);return "☀️ PROJECT: "+p.number+"\nCustomer: "+safe(p.customer)+"\nCompany: "+safe(p.company)+"\nSite: "+safe(p.site)+"\n⚡ Solar: "+fmt(p.kw)+" kW\n💰 Collection: ₹"+fmt(col)+"\n💸 Expenses: ₹"+fmt(ex)+"\n👷 Work Days: "+projectDays(p)+"\n👷 Site Salary: ₹"+fmt(sal)+"\n📊 Profit: ₹"+fmt(col-ex-sal)+"\n🔴 Pending: ₹"+fmt(Math.max(0,p.amount-col))+"\n📅 Date: "+safe(p.date);}
     double sum(String table,int pid){android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM "+table+" WHERE project_id=?",new String[]{""+pid});double x=c.moveToFirst()?c.getDouble(0):0;c.close();return x;}
     int projectDays(Project p){android.database.Cursor c=r().rawQuery("SELECT COUNT(DISTINCT date) FROM attendance WHERE status IN ('Present','Half Day') AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});int x=c.moveToFirst()?c.getInt(0):0;c.close();return x;}
     double projectSalary(Project p){double x=0;android.database.Cursor c=r().rawQuery("SELECT worker_id,status FROM attendance WHERE status IN ('Present','Half Day') AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});while(c.moveToNext()){android.database.Cursor q=r().rawQuery("SELECT daily_salary FROM workers WHERE id=?",new String[]{""+c.getInt(0)});if(q.moveToFirst()){double daily=q.getDouble(0);x+="Half Day".equalsIgnoreCase(c.getString(1))?daily*0.5:daily;}q.close();}c.close();return x;}
@@ -155,146 +119,96 @@ void projects(String month){
     void projectExpenses(Project p){page("Project Expenses");root.addView(card(projectSummary(p)));root.addView(button("+ Add Expense",ORANGE,v->expenseDialog(p,0)));showExpenses(p);}
     void showExpenses(Project p){android.database.Cursor c=r().rawQuery("SELECT id,date,category,amount,note FROM expenses WHERE project_id=? ORDER BY date DESC,id DESC",new String[]{""+p.id});while(c.moveToNext()){int id=c.getInt(0);root.addView(card("📅 "+c.getString(1)+"\n📂 "+safe(c.getString(2))+"\n💸 ₹"+fmt(c.getDouble(3))+"\n"+safe(c.getString(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->expenseDialog(p,id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete expense?",()->{w().delete("expenses","id=?",new String[]{""+id});projectExpenses(p);})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
     void expenseDialog(Project selected,int id){ArrayList<Project> ps=projectList();LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner sp=new Spinner(this);ArrayList<String> names=new ArrayList<>();names.add("Select Project / Site");for(Project p:ps)names.add(p.number+" • "+p.customer);sp.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));EditText am=field("Expense Amount ₹",""),da=field("Date YYYY-MM-DD",iso()),no=field("Note","");Spinner type=new Spinner(this);String[] types={"Other","Material","Labour","Tea","Lunch","Transportation","Fuel","Tools","Travel","Site Expense"};type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,types));if(id>0){android.database.Cursor c=r().rawQuery("SELECT project_id,amount,category,date,note FROM expenses WHERE id=?",new String[]{""+id});if(c.moveToFirst()){int pid=c.getInt(0);for(int i=0;i<ps.size();i++)if(ps.get(i).id==pid)sp.setSelection(i+1);am.setText(c.getString(1));da.setText(c.getString(3));no.setText(safe(c.getString(4)));for(int i=0;i<types.length;i++)if(types[i].equalsIgnoreCase(safe(c.getString(2))))type.setSelection(i);}c.close();}else if(selected!=null)for(int i=0;i<ps.size();i++)if(ps.get(i).id==selected.id)sp.setSelection(i+1);l.addView(sp);l.addView(am);l.addView(type);l.addView(da);l.addView(no);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Expense":"Edit Expense").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(sp.getSelectedItemPosition()<=0){Toast.makeText(this,"Select Project",Toast.LENGTH_SHORT).show();return;}double value=num(am.getText().toString());if(value<=0){am.setError("Enter amount");return;}int pid=ps.get(sp.getSelectedItemPosition()-1).id;ContentValues cv=new ContentValues();cv.put("project_id",pid);cv.put("amount",value);cv.put("category",type.getSelectedItem().toString());cv.put("date",da.getText().toString());cv.put("note",no.getText().toString());if(id==0)w().insert("expenses",null,cv);else w().update("expenses",cv,"id=?",new String[]{""+id});d.dismiss();if(selected!=null)projectExpenses(selected);else expenses();}));d.show();}
-    void workers(){workers(currentMonth());}
-void workers(String month){
-    page("Workers / Attendance");
-    root.addView(button("+ Add Worker",PURPLE,v->workerDialog(0)));
-    root.addView(button("📅 Attendance",BLUE,v->attendance(iso())));
-    root.addView(button("💰 Salary / Advance",GREEN,v->salaryReport(month)));
-    root.addView(txt("MONTHLY WORKER DETAILS",21,true));
-    root.addView(button("📅 Select Month: "+month,ORANGE,v->monthPicker(month,m->workers(m))));
-    double ts=0,ta=0,tp=0;
-    android.database.Cursor c=r().rawQuery("SELECT id,name,phone,daily_salary,monthly_salary FROM workers ORDER BY name",null);
-    while(c.moveToNext()){
-        int id=c.getInt(0);double daily=c.getDouble(3),monthly=c.getDouble(4);
-        int present=countAtt(id,month,"Present"),half=countAtt(id,month,"Half Day"),absent=countAtt(id,month,"Absent");
-        double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);
-        double advance=sumAdvance(id,month),pending=salary-advance;
-        ts+=salary;ta+=advance;tp+=pending;final int wid=id;
-        root.addView(card("👷 "+safe(c.getString(1))+"\nPresent: "+present+"\nHalf Day: "+half+
-            "\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+
-            "\nGross Salary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending Balance: ₹"+fmt(pending)));
-        root.addView(button("📋 Payment / Advance History",BLUE,v->workerHistory(wid,month)));
-        root.addView(button("✏️ Edit Worker",ORANGE,v->workerDialog(wid)));
-    }
-    c.close();
-    root.addView(card("MONTH TOTAL • "+month+"\nTotal Salary: ₹"+fmt(ts)+
-        "\nTotal Advance: ₹"+fmt(ta)+"\nTotal Pending: ₹"+fmt(tp)));
+
+    void workers(){workers(iso().substring(0,7));}
+void workers(String month){page("Workers / Attendance");root.addView(button("+ Add Worker",PURPLE,v->workerDialog(0)));root.addView(button("📅 Attendance",BLUE,v->attendance(iso())));root.addView(button("💰 Salary / Advance",GREEN,v->salaryReport(month)));root.addView(txt("MONTHLY WORKER DETAILS",20,true));root.addView(button("📅  Select Month: "+month,GREEN,v->monthPicker(month,m->workers(m))));workersMonthlyCards(month);root.addView(txt("WORKER MASTER LIST",20,true));android.database.Cursor c=r().rawQuery("SELECT id,name,phone,daily_salary,monthly_salary FROM workers ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);root.addView(card("👷 "+c.getString(1)+"\nPhone: "+safe(c.getString(2))+"\nDaily: ₹"+fmt(c.getDouble(3))+"\nMonthly: ₹"+fmt(c.getDouble(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->workerDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete worker?",()->{w().delete("workers","id=?",new String[]{""+id});workers(month); })),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
+void workersMonthlyCards(String month){double totalSalary=0,totalAdvance=0;int totalWorkers=0;android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);while(c.moveToNext()){totalWorkers++;int id=c.getInt(0);double daily=c.getDouble(2),monthly=c.getDouble(3);int present=countAtt(id,month,"Present"),half=countAtt(id,month,"Half Day"),absent=countAtt(id,month,"Absent");double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);double advance=sumAdvance(id,month);totalSalary+=salary;totalAdvance+=advance;root.addView(card("👷 "+safe(c.getString(1))+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nGross Salary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending Balance: ₹"+fmt(salary-advance)));final int wid=id;root.addView(button("Payment / Advance History",BLUE,v->workerHistory(wid,month)));}c.close();root.addView(card("TOTAL WORKERS: "+totalWorkers+"\nTOTAL SALARY: ₹"+fmt(totalSalary)+"\nTOTAL ADVANCE: ₹"+fmt(totalAdvance)+"\nTOTAL PENDING: ₹"+fmt(totalSalary-totalAdvance)));}
+void workerDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Worker Name",""),p=field("Phone",""),d=field("Daily Salary ₹","0"),m=field("Monthly Salary ₹","0");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));d.setText(c.getString(2));m.setText(c.getString(3));}c.close();}l.addView(n);l.addView(p);l.addView(d);l.addView(m);AlertDialog x=new AlertDialog.Builder(this).setTitle(id==0?"Add Worker":"Edit Worker").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();x.setOnShowListener(q->x.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString());cv.put("phone",p.getText().toString());cv.put("daily_salary",num(d.getText().toString()));cv.put("monthly_salary",num(m.getText().toString()));if(id==0)w().insert("workers",null,cv);else w().update("workers",cv,"id=?",new String[]{""+id});x.dismiss();workers();}));x.show();}
+
+    void attendance(String date){page("Attendance • "+date);EditText df=field("Date YYYY-MM-DD",date);root.addView(df);root.addView(button("🔄 Open Date",BLUE,v->attendance(df.getText().toString().trim())));root.addView(button("+ Add Attendance",PURPLE,v->attendanceDialog(date,0)));android.database.Cursor c=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);while(c.moveToNext()){int wid=c.getInt(0);String name=c.getString(1);android.database.Cursor q=r().rawQuery("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});String st="Not marked",site="",note="";int aid=0;if(q.moveToFirst()){aid=q.getInt(0);st=safe(q.getString(1));site=safe(q.getString(2));note=safe(q.getString(3));}q.close();root.addView(card("👷 "+name+"\nStatus: "+st+"\nSite: "+site+(note.isEmpty()?"":"\n"+note)));final int fwid=wid;root.addView(button("✏️ Edit Attendance",BLUE,v->attendanceDialog(date,fwid)));}c.close();}
+    void attendanceDialog(String date,int wid){android.database.Cursor wc=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);ArrayList<Integer> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>();while(wc.moveToNext()){ids.add(wc.getInt(0));names.add(wc.getString(1));}wc.close();if(names.isEmpty()){Toast.makeText(this,"Add worker first",Toast.LENGTH_SHORT).show();return;}LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner ws=new Spinner(this);ws.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));Spinner ss=new Spinner(this);ss.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Present","Half Day","Absent"}));EditText site=field("Project / Site",""),note=field("Note","");for(int i=0;i<ids.size();i++)if(ids.get(i)==wid)ws.setSelection(i);if(wid>0){android.database.Cursor c=r().rawQuery("SELECT status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});if(c.moveToFirst()){String oldStatus=safe(c.getString(0)); if("Half Day".equalsIgnoreCase(oldStatus)) ss.setSelection(1); else if("Absent".equalsIgnoreCase(oldStatus)) ss.setSelection(2); else ss.setSelection(0);site.setText(safe(c.getString(1)));note.setText(safe(c.getString(2)));}c.close();}if(wid>0)ws.setEnabled(false);
+l.addView(ws);l.addView(ss);l.addView(site);l.addView(note);
+AlertDialog d=new AlertDialog.Builder(this)
+ .setTitle("Attendance • "+date)
+ .setView(l)
+ .setNegativeButton("Cancel",null)
+ .setPositiveButton("Save",null).create();
+d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{
+ int worker=ids.get(ws.getSelectedItemPosition());
+ ContentValues cv=new ContentValues();
+ cv.put("worker_id",worker);
+ cv.put("date",date);
+ cv.put("status",ss.getSelectedItem().toString());
+ cv.put("site",site.getText().toString());
+ cv.put("note",note.getText().toString());
+
+ // One attendance record per worker per date: update existing, otherwise insert.
+ long exists=0;
+ android.database.Cursor c=r().rawQuery(
+  "SELECT id FROM attendance WHERE worker_id=? AND date=? LIMIT 1",
+  new String[]{""+worker,date});
+ if(c.moveToFirst())exists=c.getLong(0);
+ c.close();
+
+ if(exists==0){
+  w().insert("attendance",null,cv);
+ }else{
+  w().update("attendance",cv,"id=?",new String[]{""+exists});
+ }
+ d.dismiss();
+ attendance(date);
+ }));
+d.show();
 }
 
-    void workerDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Worker Name",""),p=field("Phone",""),d=field("Daily Salary ₹","0"),m=field("Monthly Salary ₹","0");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));d.setText(c.getString(2));m.setText(c.getString(3));}c.close();}l.addView(n);l.addView(p);l.addView(d);l.addView(m);AlertDialog x=new AlertDialog.Builder(this).setTitle(id==0?"Add Worker":"Edit Worker").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();x.setOnShowListener(q->x.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString());cv.put("phone",p.getText().toString());cv.put("daily_salary",num(d.getText().toString()));cv.put("monthly_salary",num(m.getText().toString()));if(id==0)w().insert("workers",null,cv);else w().update("workers",cv,"id=?",new String[]{""+id});x.dismiss();workers();}));x.show();}
-    void attendance(String date){
-    page("Attendance • "+date);
-    CalendarView cv=new CalendarView(this);
-    try{SimpleDateFormat f=new SimpleDateFormat("yyyy-MM-dd",Locale.US);Date dd=f.parse(date);
-        if(dd!=null)cv.setDate(dd.getTime(),false,true);}catch(Exception ignored){}
-    root.addView(cv,new LinearLayout.LayoutParams(-1,dp(300)));
-    root.addView(txt("Selected Date: "+date,20,true));
-    root.addView(button("+ Add Attendance",PURPLE,v->attendanceDialog(date,0)));
-    android.database.Cursor c=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);
-    while(c.moveToNext()){
-        int wid=c.getInt(0);String name=c.getString(1);
-        android.database.Cursor q=r().rawQuery("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",
-            new String[]{""+wid,date});
-        String st="Not marked",site="",note="";
-        if(q.moveToFirst()){st=safe(q.getString(1));site=safe(q.getString(2));note=safe(q.getString(3));}q.close();
-        root.addView(card("👷 "+name+"\nStatus: "+st+"\nSite: "+site+(note.isEmpty()?"":"\n"+note)));
-        final int fwid=wid;root.addView(button("✏️ Edit Attendance",BLUE,v->attendanceDialog(date,fwid)));
-    }
-    c.close();
-    cv.setOnDateChangeListener((view,year,month,day)->attendance(
-        String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day)));
-}
-
-    void attendanceDialog(String date,int wid){android.database.Cursor wc=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);ArrayList<Integer> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>();while(wc.moveToNext()){ids.add(wc.getInt(0));names.add(wc.getString(1));}wc.close();if(names.isEmpty()){Toast.makeText(this,"Add worker first",Toast.LENGTH_SHORT).show();return;}LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner ws=new Spinner(this);ws.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));Spinner ss=new Spinner(this);ss.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Present","Half Day","Absent"}));EditText site=field("Project / Site",""),note=field("Note","");for(int i=0;i<ids.size();i++)if(ids.get(i)==wid)ws.setSelection(i);if(wid>0){ws.setEnabled(false);android.database.Cursor c=r().rawQuery("SELECT status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});if(c.moveToFirst()){String oldStatus=safe(c.getString(0)); if("Half Day".equalsIgnoreCase(oldStatus)) ss.setSelection(1); else if("Absent".equalsIgnoreCase(oldStatus)) ss.setSelection(2); else ss.setSelection(0);site.setText(safe(c.getString(1)));note.setText(safe(c.getString(2)));}c.close();}l.addView(ws);l.addView(ss);l.addView(site);l.addView(note);AlertDialog d=new AlertDialog.Builder(this).setTitle("Attendance • "+date).setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{int worker=ids.get(ws.getSelectedItemPosition());ContentValues cv=new ContentValues();cv.put("worker_id",worker);cv.put("date",date);cv.put("status",ss.getSelectedItem().toString());cv.put("site",site.getText().toString());cv.put("note",note.getText().toString());long exists=0;android.database.Cursor c=r().rawQuery("SELECT id FROM attendance WHERE worker_id=? AND date=?",new String[]{""+worker,date});if(c.moveToFirst())exists=c.getLong(0);c.close();if(exists==0)w().insert("attendance",null,cv);else w().update("attendance",cv,"id=?",new String[]{""+exists});d.dismiss();attendance(date); }));d.show();}
-    void salaryReport(String month){
-    page("Salary / Advance Report");
-    root.addView(button("📅 Select Month: "+month,BLUE,v->monthPicker(month,m->salaryReport(m))));
-    salaryCards(month);
-}
-
+    void salaryReport(String month){page("Salary / Advance Report");EditText mf=field("Month YYYY-MM",month);root.addView(mf);root.addView(button("🔄 Open Month",BLUE,v->salaryReport(vText(mf))));salaryCards(month);}
     String vText(EditText e){return e.getText().toString().trim();}
     void salaryCards(String month){
-    double ts=0,ta=0,tp=0;
-    android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);
-    while(c.moveToNext()){
-        int id=c.getInt(0);double daily=c.getDouble(2),monthly=c.getDouble(3);
-        int present=countAtt(id,month,"Present"),half=countAtt(id,month,"Half Day"),absent=countAtt(id,month,"Absent");
-        double sal=monthly>0?monthly:(present*daily)+(half*daily*0.5),adv=sumAdvance(id,month),bal=Math.max(0,sal-adv);
-        ts+=sal;ta+=adv;tp+=bal;final int wid=id;
-        root.addView(card("👷 "+c.getString(1)+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+
-            "\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nGross Salary: ₹"+fmt(sal)+
-            "\nAdvance: ₹"+fmt(adv)+"\nPending Balance: ₹"+fmt(bal)));
-        root.addView(button("📋 Payment / Advance History",BLUE,v->workerHistory(wid,month)));
-        root.addView(button("➕ Add Salary Advance",ORANGE,v->addAdvance(wid,month)));
-        root.addView(button("✏️ Edit Worker Salary",PURPLE,v->workerDialog(wid)));
+        double ts=0,ta=0;
+        android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);
+        while(c.moveToNext()){
+            int id=c.getInt(0);
+            double daily=c.getDouble(2),monthly=c.getDouble(3);
+            int present=countAtt(id,month,"Present");
+            int half=countAtt(id,month,"Half Day");
+            int absent=countAtt(id,month,"Absent");
+            double sal=monthly>0?monthly:(present*daily)+(half*daily*0.5);
+            double adv=sumAdvance(id,month);
+            double bal=sal-adv;
+            ts+=sal; ta+=adv;
+            final int workerId=id;
+            root.addView(card("👷 "+c.getString(1)+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nSalary: ₹"+fmt(sal)+"\nAdvance: ₹"+fmt(adv)+"\nBALANCE: ₹"+fmt(bal)));
+            root.addView(button("📋 Payment / Advance History",BLUE,v->workerHistory(workerId,month)));
+        }
+        c.close();
+        root.addView(card("TOTAL SALARY: ₹"+fmt(ts)+"\nTOTAL ADVANCE: ₹"+fmt(ta)+"\nTOTAL PENDING: ₹"+fmt(ts-ta)));
+        root.addView(button("📄 Salary PDF",PURPLE,v->createPdf("Salary_"+month,salaryText(month))));
+        root.addView(button("📱 Share / WhatsApp",GREEN,v->share(salaryText(month))));
     }
-    c.close();
-    root.addView(card("TOTAL SALARY: ₹"+fmt(ts)+"\nTOTAL ADVANCE: ₹"+fmt(ta)+"\nTOTAL PENDING: ₹"+fmt(tp)));
-    root.addView(button("📄 Salary PDF",PURPLE,v->createPdf("Salary_"+month,salaryText(month))));
-    root.addView(button("📱 Share / WhatsApp",GREEN,v->share(salaryText(month))));
-}
 
-
-    void addAdvance(int workerId,String month){
-        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);
-        EditText amount=field("Advance amount ₹",""),date=field("Date YYYY-MM-DD",iso()),note=field("Note","");
-        l.addView(amount);l.addView(date);l.addView(note);
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("Add Salary Advance").setView(l)
-            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
-        d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{
-            double a=num(amount.getText().toString());String dt=date.getText().toString().trim();
-            if(a<=0){amount.setError("Enter amount");return;}if(dt.length()!=10){date.setError("Use YYYY-MM-DD");return;}
-            ContentValues cv=new ContentValues();cv.put("worker_id",workerId);cv.put("amount",a);cv.put("date",dt);cv.put("note",note.getText().toString().trim());
-            long id=w().insert("advances",null,cv);if(id<0){Toast.makeText(this,"Advance save failed",Toast.LENGTH_LONG).show();return;}
-            d.dismiss();salaryReport(month);
-        }));d.show();
-    }
-    void editAdvance(int workerId,int advanceId,String month){
-        android.database.Cursor c=r().rawQuery("SELECT amount,date,note FROM advances WHERE id=? AND worker_id=?",
-            new String[]{""+advanceId,""+workerId});
-        if(!c.moveToFirst()){c.close();return;}double oa=c.getDouble(0);String od=safe(c.getString(1)),on=safe(c.getString(2));c.close();
-        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);
-        EditText amount=field("Advance amount ₹",String.valueOf(oa)),date=field("Date YYYY-MM-DD",od),note=field("Note",on);
-        l.addView(amount);l.addView(date);l.addView(note);
-        AlertDialog d=new AlertDialog.Builder(this).setTitle("Edit Salary Advance").setView(l)
-            .setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
-        d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{
-            double a=num(amount.getText().toString());String dt=date.getText().toString().trim();
-            if(a<=0){amount.setError("Enter amount");return;}if(dt.length()!=10){date.setError("Use YYYY-MM-DD");return;}
-            ContentValues cv=new ContentValues();cv.put("worker_id",workerId);cv.put("amount",a);cv.put("date",dt);cv.put("note",note.getText().toString().trim());
-            w().update("advances",cv,"id=? AND worker_id=?",new String[]{""+advanceId,""+workerId});d.dismiss();workerHistory(workerId,month);
-        }));d.show();
-    }
     void workerHistory(int workerId,String month){
-    page("Worker Payment / Advance History");
-    android.database.Cursor wc=r().rawQuery("SELECT name,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+workerId});
-    if(!wc.moveToFirst()){wc.close();return;}
-    String name=safe(wc.getString(0));double daily=wc.getDouble(1),monthly=wc.getDouble(2);wc.close();
-    int present=countAtt(workerId,month,"Present"),half=countAtt(workerId,month,"Half Day"),absent=countAtt(workerId,month,"Absent");
-    double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5),advance=sumAdvance(workerId,month),pending=salary-advance;
-    root.addView(card("👷 "+name+"\nMonth: "+month+"\nSalary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending: ₹"+fmt(pending)));
-    root.addView(button("➕ Add Advance",ORANGE,v->addAdvance(workerId,month)));
-    root.addView(txt("💰 PAYMENT / WORK HISTORY",20,true));
-    android.database.Cursor a=r().rawQuery("SELECT date,status,site,note FROM attendance WHERE worker_id=? AND date LIKE ? ORDER BY date",
-        new String[]{""+workerId,month+"%"});
-    boolean any=false;
-    while(a.moveToNext()){any=true;String st=safe(a.getString(1));double earned="Present".equalsIgnoreCase(st)?daily:("Half Day".equalsIgnoreCase(st)?daily*0.5:0);
-        root.addView(card("📅 "+safe(a.getString(0))+"\nStatus: "+st+"\nSite: "+safe(a.getString(2))+"\nEarned: ₹"+fmt(earned)+(safe(a.getString(3)).isEmpty()?"":"\nNote: "+safe(a.getString(3)))));
+        page("Worker Payment / Advance History");
+        android.database.Cursor wc=r().rawQuery("SELECT name,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+workerId});
+        if(!wc.moveToFirst()){wc.close();return;}
+        String name=safe(wc.getString(0)); double daily=wc.getDouble(1), monthly=wc.getDouble(2); wc.close();
+        int present=countAtt(workerId,month,"Present"),half=countAtt(workerId,month,"Half Day"),absent=countAtt(workerId,month,"Absent");
+        double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);
+        double advance=sumAdvance(workerId,month);
+        root.addView(card("👷 "+name+"\nMonth: "+month+"\nSalary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending: ₹"+fmt(salary-advance)));
+        root.addView(txt("💰 PAYMENT / WORK HISTORY",20,true));
+        android.database.Cursor a=r().rawQuery("SELECT date,status,site,note FROM attendance WHERE worker_id=? AND date LIKE ? ORDER BY date",new String[]{""+workerId,month+"%"});
+        boolean any=false;
+        while(a.moveToNext()){
+            any=true; String st=safe(a.getString(1)); double earned="Present".equalsIgnoreCase(st)?daily:("Half Day".equalsIgnoreCase(st)?daily*0.5:0);
+            root.addView(card("📅 "+safe(a.getString(0))+"\nStatus: "+st+"\nSite: "+safe(a.getString(2))+"\nEarned: ₹"+fmt(earned)+(safe(a.getString(3)).isEmpty()?"":"\nNote: "+safe(a.getString(3)))));
+        }
+        a.close(); if(!any) root.addView(card("No attendance/payment entries for this month."));
+        root.addView(txt("💵 ADVANCE HISTORY",20,true));
+        android.database.Cursor ad=r().rawQuery("SELECT date,amount,note FROM advances WHERE worker_id=? AND date LIKE ? ORDER BY date",new String[]{""+workerId,month+"%"});
+        boolean hasAdvance=false;
+        while(ad.moveToNext()){hasAdvance=true; root.addView(card("📅 "+safe(ad.getString(0))+"\nAdvance: ₹"+fmt(ad.getDouble(1))+(safe(ad.getString(2)).isEmpty()?"":"\nNote: "+safe(ad.getString(2)))));}
+        ad.close(); if(!hasAdvance) root.addView(card("No advance entries for this month."));
     }
-    a.close();if(!any)root.addView(card("No attendance/payment entries for this month."));
-    root.addView(txt("💵 ADVANCE HISTORY",20,true));
-    android.database.Cursor ad=r().rawQuery("SELECT id,date,amount,note FROM advances WHERE worker_id=? AND date LIKE ? ORDER BY date,id",
-        new String[]{""+workerId,month+"%"});
-    boolean has=false;
-    while(ad.moveToNext()){has=true;final int advanceId=ad.getInt(0);
-        root.addView(card("📅 "+safe(ad.getString(1))+"\nAdvance: ₹"+fmt(ad.getDouble(2))+(safe(ad.getString(3)).isEmpty()?"":"\nNote: "+safe(ad.getString(3)))));
-        root.addView(button("✏️ Edit Advance",BLUE,v->editAdvance(workerId,advanceId,month)));
-        root.addView(button("🗑 Delete Advance",RED,v->confirm("Delete advance?",()->{w().delete("advances","id=? AND worker_id=?",new String[]{""+advanceId,""+workerId});workerHistory(workerId,month);})));
-    }
-    ad.close();if(!has)root.addView(card("No advance entries for this month."));
-}
-
 
     int countAtt(int wid,String month,String status){android.database.Cursor c=r().rawQuery("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND date LIKE ? AND status=?",new String[]{""+wid,month+"%",status});int x=c.moveToFirst()?c.getInt(0):0;c.close();return x;}
     double sumAdvance(int wid,String month){android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=? AND date LIKE ?",new String[]{""+wid,month+"%"});double x=c.moveToFirst()?c.getDouble(0):0;c.close();return x;}
@@ -305,41 +219,30 @@ void workers(String month){
             int id=c.getInt(0); double daily=c.getDouble(2), monthly=c.getDouble(3);
             int present=countAtt(id,month,"Present"), half=countAtt(id,month,"Half Day"), absent=countAtt(id,month,"Absent");
             double sal=monthly>0?monthly:(present*daily)+(half*daily*0.5); double adv=sumAdvance(id,month);
-            s.append("WORKER: ").append(c.getString(1)).append("\nPresent: ").append(present).append("\nHalf Day: ").append(half).append("\nAbsent: ").append(absent).append("\nDaily Salary: ₹").append(fmt(daily)).append("\nMonthly Salary: ₹").append(fmt(monthly)).append("\nSalary: ₹").append(fmt(sal)).append("\nAdvance: ₹").append(fmt(adv)).append("\nBALANCE: ₹").append(fmt(Math.max(0,sal-adv))).append("\n\n");
+            s.append("WORKER: ").append(c.getString(1)).append("\nPresent: ").append(present).append("\nHalf Day: ").append(half).append("\nAbsent: ").append(absent).append("\nDaily Salary: ₹").append(fmt(daily)).append("\nMonthly Salary: ₹").append(fmt(monthly)).append("\nSalary: ₹").append(fmt(sal)).append("\nAdvance: ₹").append(fmt(adv)).append("\nBALANCE: ₹").append(fmt(sal-adv)).append("\n\n");
         } c.close(); return s.toString();
     }
-    void calendar(){
-    page("Calendar / Daily Work");
-    CalendarView cv=new CalendarView(this);cv.setDate(System.currentTimeMillis(),false,true);
-    root.addView(cv,new LinearLayout.LayoutParams(-1,dp(330)));
-    TextView selected=txt("Selected Date: "+iso(),21,true);root.addView(selected);
-    showCalendarDate(iso(),selected);
-    cv.setOnDateChangeListener((view,year,month,day)->showCalendarDate(
-        String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day),selected));
-}
-    void calendarDate(String date){
-    page("Calendar / Daily Work");
-    CalendarView cv=new CalendarView(this);
-    try{SimpleDateFormat f=new SimpleDateFormat("yyyy-MM-dd",Locale.US);Date dd=f.parse(date);if(dd!=null)cv.setDate(dd.getTime(),false,true);}catch(Exception ignored){}
-    root.addView(cv,new LinearLayout.LayoutParams(-1,dp(330)));
-    TextView selected=txt("Selected Date: "+date,21,true);root.addView(selected);
-    showCalendarDate(date,selected);
-    cv.setOnDateChangeListener((view,year,month,day)->showCalendarDate(
-        String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day),selected));
-}
 
-    void showCalendarDate(String date,TextView selected){
-        selected.setText("Selected Date: "+date);
-        while(root.getChildCount()>3)root.removeViewAt(3);
-        root.addView(button("➕ Add Attendance",PURPLE,v->attendance(date)));
-        android.database.Cursor c=r().rawQuery(
-            "SELECT a.status,a.site,w.name,a.note FROM attendance a LEFT JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY w.name",
-            new String[]{date});
-        boolean found=false;
-        while(c.moveToNext()){found=true;root.addView(card("👷 "+safe(c.getString(2))+"\nStatus: "+safe(c.getString(0))+"\nSite: "+safe(c.getString(1))+(safe(c.getString(3)).isEmpty()?"":"\n"+safe(c.getString(3)))));}
-        c.close();if(!found)root.addView(card("No attendance for this date."));
-    }
-
+    void calendar(){page("Calendar / Daily Work");CalendarView cv=new CalendarView(this);cv.setDate(System.currentTimeMillis(),false,true);root.addView(cv,new LinearLayout.LayoutParams(-1,dp(330)));TextView selected=txt("",21,true);root.addView(selected);Calendar cal=Calendar.getInstance();String initial=new SimpleDateFormat("yyyy-MM-dd",Locale.getDefault()).format(cal.getTime());showCalendarDate(initial,selected);cv.setOnDateChangeListener((view,year,month,day)->{String date=String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day);showCalendarDate(date,selected);});}
+void showCalendarDate(String date,TextView selected){
+ selected.setText("DATE: "+date);
+ // Keep page header, CalendarView and selected-date label.
+ // Remove only the old attendance cards.
+ if(root.getChildCount()>3)root.removeViews(3,root.getChildCount()-3);
+ android.database.Cursor c=r().rawQuery(
+  "SELECT a.status,a.site,w.name FROM attendance a LEFT JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY w.name",
+  new String[]{date});
+ boolean f=false;
+ while(c.moveToNext()){
+  f=true;
+  root.addView(card(" "+safe(c.getString(2))+
+   "\nStatus: "+safe(c.getString(0))+
+   "\nSite: "+safe(c.getString(1))));
+ }
+ c.close();
+ if(!f)root.addView(card("No attendance for this date."));
+}
+void calendarDate(String date){if(root==null)return;TextView t=txt("",21,true);root.addView(t);showCalendarDate(date,t);}
     void reports(){page("Reports / PDF");root.addView(card(dashboardText()));root.addView(button("📄 All Projects PDF",PURPLE,v->createPdf("Projects",allProjectsText())));root.addView(button("📱 Share Project Summary",GREEN,v->share(allProjectsText())));root.addView(button("💰 Salary Report",BLUE,v->salaryReport(iso().substring(0,7))));}
     String allProjectsText(){StringBuilder s=new StringBuilder();for(Project p:projectList())s.append(projectReport(p)).append("\n----------------\n");return s.toString();}
 
@@ -354,1139 +257,3 @@ void workers(String month){
     void choosePhoto(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,202);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||photoProject==null)return;Uri u=req==201?cameraUri:(data==null?null:data.getData());if(u!=null){ContentValues cv=new ContentValues();cv.put("project_id",photoProject.id);cv.put("uri",u.toString());w().insert("photos",null,cv);photos(photoProject);}}
 }
-
-2. DBHelper.java — FINAL
-package com.edisonsolar.businesspro;
-
-import android.content.ContentValues;
-import android.content.Context;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
-import android.database.sqlite.SQLiteOpenHelper;
-
-import java.util.ArrayList;
-import java.util.Locale;
-
-public class DBHelper extends SQLiteOpenHelper {
-
-    private static final String DB_NAME = "edison_solar_manager.db";
-    private static final int DB_VERSION = 4;
-
-    public DBHelper(Context context) {
-        super(context, DB_NAME, null, DB_VERSION);
-    }
-
-    @Override
-    public void onCreate(SQLiteDatabase db) {
-
-        db.execSQL(
-                "CREATE TABLE companies (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "name TEXT NOT NULL," +
-                        "phone TEXT)"
-        );
-
-        db.execSQL(
-                "CREATE TABLE projects (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "company_id INTEGER DEFAULT 0," +
-                        "number TEXT," +
-                        "company TEXT," +
-                        "customer TEXT," +
-                        "phone TEXT," +
-                        "site TEXT," +
-                        "kw REAL DEFAULT 0," +
-                        "amount REAL DEFAULT 0," +
-                        "date TEXT," +
-                        "status TEXT," +
-                        "work TEXT," +
-                        "lat REAL DEFAULT 0," +
-                        "lon REAL DEFAULT 0," +
-                        "has_location INTEGER DEFAULT 0)"
-        );
-
-        db.execSQL(
-                "CREATE TABLE payments (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "project_id INTEGER," +
-                        "amount REAL DEFAULT 0," +
-                        "date TEXT," +
-                        "mode TEXT," +
-                        "note TEXT)"
-        );
-
-        db.execSQL(
-                "CREATE TABLE expenses (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "project_id INTEGER," +
-                        "category TEXT," +
-                        "amount REAL DEFAULT 0," +
-                        "date TEXT," +
-                        "note TEXT)"
-        );
-
-        db.execSQL(
-                "CREATE TABLE photos (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "project_id INTEGER," +
-                        "uri TEXT)"
-        );
-
-        db.execSQL(
-                "CREATE TABLE workers (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "name TEXT NOT NULL," +
-                        "phone TEXT," +
-                        "daily_salary REAL DEFAULT 0," +
-                        "monthly_salary REAL DEFAULT 0)"
-        );
-
-        db.execSQL(
-                "CREATE TABLE attendance (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "worker_id INTEGER," +
-                        "date TEXT," +
-                        "status TEXT," +
-                        "site TEXT," +
-                        "note TEXT," +
-                        "UNIQUE(worker_id,date))"
-        );
-
-        db.execSQL(
-                "CREATE TABLE advances (" +
-                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                        "worker_id INTEGER," +
-                        "amount REAL DEFAULT 0," +
-                        "date TEXT," +
-                        "note TEXT)"
-        );
-    }
-
-    @Override
-    public void onUpgrade(
-            SQLiteDatabase db,
-            int oldVersion,
-            int newVersion
-    ) {
-
-        if (oldVersion < 4) {
-
-            db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS workers (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                            "name TEXT NOT NULL," +
-                            "phone TEXT," +
-                            "daily_salary REAL DEFAULT 0," +
-                            "monthly_salary REAL DEFAULT 0)"
-            );
-
-            db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS attendance (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                            "worker_id INTEGER," +
-                            "date TEXT," +
-                            "status TEXT," +
-                            "site TEXT," +
-                            "note TEXT," +
-                            "UNIQUE(worker_id,date))"
-            );
-
-            db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS advances (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                            "worker_id INTEGER," +
-                            "amount REAL DEFAULT 0," +
-                            "date TEXT," +
-                            "note TEXT)"
-            );
-        }
-    }
-
-    // =========================================================
-    // COMPANY
-    // =========================================================
-
-    public ArrayList<Company> companies() {
-
-        ArrayList<Company> list = new ArrayList<>();
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,name,phone FROM companies ORDER BY name",
-                null
-        );
-
-        while (c.moveToNext()) {
-
-            Company company = new Company();
-
-            company.id = c.getInt(0);
-            company.name = safe(c.getString(1));
-            company.phone = safe(c.getString(2));
-
-            list.add(company);
-        }
-
-        c.close();
-
-        return list;
-    }
-
-    public void addCompany(
-            String name,
-            String phone
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("name", name);
-        values.put("phone", phone);
-
-        getWritableDatabase().insert(
-                "companies",
-                null,
-                values
-        );
-    }
-
-    public void updateCompany(
-            int id,
-            String name,
-            String phone
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("name", name);
-        values.put("phone", phone);
-
-        getWritableDatabase().update(
-                "companies",
-                values,
-                "id=?",
-                new String[]{String.valueOf(id)}
-        );
-    }
-
-    public void deleteCompany(int id) {
-
-        getWritableDatabase().delete(
-                "companies",
-                "id=?",
-                new String[]{String.valueOf(id)}
-        );
-    }
-
-    // =========================================================
-    // PROJECT
-    // =========================================================
-
-    public ArrayList<Project> projects() {
-
-        ArrayList<Project> list = new ArrayList<>();
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,company_id,number,company," +
-                        "customer,phone,site,kw,amount," +
-                        "date,status,work,lat,lon,has_location " +
-                        "FROM projects ORDER BY id DESC",
-                null
-        );
-
-        while (c.moveToNext()) {
-            list.add(readProject(c));
-        }
-
-        c.close();
-
-        return list;
-    }
-
-    public Project project(int id) {
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,company_id,number,company," +
-                        "customer,phone,site,kw,amount," +
-                        "date,status,work,lat,lon,has_location " +
-                        "FROM projects WHERE id=?",
-                new String[]{String.valueOf(id)}
-        );
-
-        Project project = null;
-
-        if (c.moveToFirst()) {
-            project = readProject(c);
-        }
-
-        c.close();
-
-        return project;
-    }
-
-    private Project readProject(Cursor c) {
-
-        Project p = new Project();
-
-        p.id = c.getInt(0);
-        p.companyId = c.getInt(1);
-
-        p.number = safe(c.getString(2));
-        p.company = safe(c.getString(3));
-        p.customer = safe(c.getString(4));
-        p.phone = safe(c.getString(5));
-        p.site = safe(c.getString(6));
-
-        p.kw = c.getDouble(7);
-        p.amount = c.getDouble(8);
-
-        p.date = safe(c.getString(9));
-        p.status = safe(c.getString(10));
-        p.work = safe(c.getString(11));
-
-        p.lat = c.getDouble(12);
-        p.lon = c.getDouble(13);
-        p.hasLoc = c.getInt(14) == 1;
-
-        return p;
-    }
-
-    public void addProject(
-            int companyId,
-            String company,
-            String customer,
-            String phone,
-            String site,
-            double kw,
-            double amount,
-            String date,
-            String status,
-            String work
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("company_id", companyId);
-        values.put("number", nextProjectNumber());
-
-        values.put("company", company);
-        values.put("customer", customer);
-        values.put("phone", phone);
-        values.put("site", site);
-
-        values.put("kw", kw);
-        values.put("amount", amount);
-
-        values.put("date", date);
-        values.put("status", status);
-        values.put("work", work);
-
-        getWritableDatabase().insert(
-                "projects",
-                null,
-                values
-        );
-    }
-
-    public void updateProject(
-            Project old,
-            int companyId,
-            String company,
-            String customer,
-            String phone,
-            String site,
-            double kw,
-            double amount,
-            String date,
-            String status,
-            String work
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("company_id", companyId);
-        values.put("company", company);
-        values.put("customer", customer);
-        values.put("phone", phone);
-        values.put("site", site);
-
-        values.put("kw", kw);
-        values.put("amount", amount);
-
-        values.put("date", date);
-        values.put("status", status);
-        values.put("work", work);
-
-        getWritableDatabase().update(
-                "projects",
-                values,
-                "id=?",
-                new String[]{String.valueOf(old.id)}
-        );
-    }
-
-    private String nextProjectNumber() {
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT COUNT(*) FROM projects",
-                null
-        );
-
-        int count = 0;
-
-        if (c.moveToFirst()) {
-            count = c.getInt(0);
-        }
-
-        c.close();
-
-        return String.format(
-                Locale.getDefault(),
-                "ESP-%04d",
-                count + 1
-        );
-    }
-
-    public void deleteProject(int projectId) {
-
-        SQLiteDatabase db =
-                getWritableDatabase();
-
-        db.delete(
-                "photos",
-                "project_id=?",
-                new String[]{String.valueOf(projectId)}
-        );
-
-        db.delete(
-                "expenses",
-                "project_id=?",
-                new String[]{String.valueOf(projectId)}
-        );
-
-        db.delete(
-                "payments",
-                "project_id=?",
-                new String[]{String.valueOf(projectId)}
-        );
-
-        db.delete(
-                "projects",
-                "id=?",
-                new String[]{String.valueOf(projectId)}
-        );
-    }
-
-    // =========================================================
-    // PAYMENTS
-    // =========================================================
-
-    public void addPayment(
-            int projectId,
-            double amount,
-            String date,
-            String note
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("project_id", projectId);
-        values.put("amount", amount);
-        values.put("date", date);
-        values.put("mode", "Payment");
-        values.put("note", note);
-
-        getWritableDatabase().insert(
-                "payments",
-                null,
-                values
-        );
-    }
-
-    public double collection(int projectId) {
-
-        return queryDouble(
-                "SELECT COALESCE(SUM(amount),0) " +
-                        "FROM payments WHERE project_id=?",
-                projectId
-        );
-    }
-
-    public double pending(int projectId) {
-
-        Project p = project(projectId);
-
-        if (p == null) {
-            return 0;
-        }
-
-        return Math.max(
-                0,
-                p.amount - collection(projectId)
-        );
-    }
-
-    // =========================================================
-    // EXPENSES
-    // =========================================================
-
-    public void addExpense(
-            int projectId,
-            double amount,
-            String category,
-            String date,
-            String note
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("project_id", projectId);
-        values.put("category", category);
-        values.put("amount", amount);
-        values.put("date", date);
-        values.put("note", note);
-
-        getWritableDatabase().insert(
-                "expenses",
-                null,
-                values
-        );
-    }
-
-    public double expenses(int projectId) {
-
-        return queryDouble(
-                "SELECT COALESCE(SUM(amount),0) " +
-                        "FROM expenses WHERE project_id=?",
-                projectId
-        );
-    }
-
-    public double profit(int projectId) {
-
-        Project p = project(projectId);
-
-        if (p == null) {
-            return 0;
-        }
-
-        return p.amount - expenses(projectId);
-    }
-
-    // =========================================================
-    // PHOTOS
-    // =========================================================
-
-    public void addPhoto(
-            int projectId,
-            String uri
-    ) {
-
-        ContentValues values = new ContentValues();
-
-        values.put("project_id", projectId);
-        values.put("uri", uri);
-
-        getWritableDatabase().insert(
-                "photos",
-                null,
-                values
-        );
-    }
-
-    public ArrayList<String> photos(
-            int projectId
-    ) {
-
-        ArrayList<String> list =
-                new ArrayList<>();
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT uri FROM photos " +
-                        "WHERE project_id=? ORDER BY id DESC",
-                new String[]{String.valueOf(projectId)}
-        );
-
-        while (c.moveToNext()) {
-            list.add(safe(c.getString(0)));
-        }
-
-        c.close();
-
-        return list;
-    }
-
-    // =========================================================
-    // WORKERS
-    // =========================================================
-
-    public ArrayList<Worker> workers() {
-
-        ArrayList<Worker> list =
-                new ArrayList<>();
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,name,phone,daily_salary,monthly_salary " +
-                        "FROM workers ORDER BY name",
-                null
-        );
-
-        while (c.moveToNext()) {
-
-            Worker worker = new Worker();
-
-            worker.id = c.getInt(0);
-            worker.name = safe(c.getString(1));
-            worker.phone = safe(c.getString(2));
-
-            worker.dailySalary = c.getDouble(3);
-            worker.monthlySalary = c.getDouble(4);
-
-            list.add(worker);
-        }
-
-        c.close();
-
-        return list;
-    }
-
-    public Worker worker(int id) {
-
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,name,phone,daily_salary,monthly_salary " +
-                        "FROM workers WHERE id=?",
-                new String[]{String.valueOf(id)}
-        );
-
-        Worker worker = null;
-
-        if (c.moveToFirst()) {
-
-            worker = new Worker();
-
-            worker.id = c.getInt(0);
-            worker.name = safe(c.getString(1));
-            worker.phone = safe(c.getString(2));
-
-            worker.dailySalary = c.getDouble(3);
-            worker.monthlySalary = c.getDouble(4);
-        }
-
-        c.close();
-
-        return worker;
-    }
-
-    public void saveWorker(Worker worker) {
-
-        ContentValues values =
-                new ContentValues();
-
-        values.put("name", worker.name);
-        values.put("phone", worker.phone);
-
-        values.put(
-                "daily_salary",
-                worker.dailySalary
-        );
-
-        values.put(
-                "monthly_salary",
-                worker.monthlySalary
-        );
-
-        if (worker.id == 0) {
-
-            getWritableDatabase().insert(
-                    "workers",
-                    null,
-                    values
-            );
-
-        } else {
-
-            getWritableDatabase().update(
-                    "workers",
-                    values,
-                    "id=?",
-                    new String[]{
-                            String.valueOf(worker.id)
-                    }
-            );
-        }
-    }
-
-    public void deleteWorker(int workerId) {
-
-        SQLiteDatabase db =
-                getWritableDatabase();
-
-        db.delete(
-                "attendance",
-                "worker_id=?",
-                new String[]{
-                        String.valueOf(workerId)
-                }
-        );
-
-        db.delete(
-                "advances",
-                "worker_id=?",
-                new String[]{
-                        String.valueOf(workerId)
-                }
-        );
-
-        db.delete(
-                "workers",
-                "id=?",
-                new String[]{
-                        String.valueOf(workerId)
-                }
-        );
-    }
-
-    // =========================================================
-    // ATTENDANCE
-    // =========================================================
-
-    public void saveAttendance(
-            int workerId,
-            String date,
-            String status,
-            String site,
-            String note
-    ) {
-
-        ContentValues values =
-                new ContentValues();
-
-        values.put("worker_id", workerId);
-        values.put("date", date);
-        values.put("status", status);
-        values.put("site", site);
-        values.put("note", note);
-
-        getWritableDatabase().insertWithOnConflict(
-                "attendance",
-                null,
-                values,
-                SQLiteDatabase.CONFLICT_REPLACE
-        );
-    }
-
-    public int presentDays(
-            int workerId,
-            String month
-    ) {
-
-        Cursor c =
-                getReadableDatabase().rawQuery(
-                        "SELECT COUNT(*) FROM attendance " +
-                                "WHERE worker_id=? " +
-                                "AND status='Present' " +
-                                "AND date LIKE ?",
-                        new String[]{
-                                String.valueOf(workerId),
-                                month + "%"
-                        }
-                );
-
-        int result = 0;
-
-        if (c.moveToFirst()) {
-            result = c.getInt(0);
-        }
-
-        c.close();
-
-        return result;
-    }
-
-    public int halfDayDays(
-            int workerId,
-            String month
-    ) {
-
-        Cursor c =
-                getReadableDatabase().rawQuery(
-                        "SELECT COUNT(*) FROM attendance " +
-                                "WHERE worker_id=? " +
-                                "AND status='Half Day' " +
-                                "AND date LIKE ?",
-                        new String[]{
-                                String.valueOf(workerId),
-                                month + "%"
-                        }
-                );
-
-        int result = 0;
-
-        if (c.moveToFirst()) {
-            result = c.getInt(0);
-        }
-
-        c.close();
-
-        return result;
-    }
-
-    public int absentDays(
-            int workerId,
-            String month
-    ) {
-
-        Cursor c =
-                getReadableDatabase().rawQuery(
-                        "SELECT COUNT(*) FROM attendance " +
-                                "WHERE worker_id=? " +
-                                "AND status='Absent' " +
-                                "AND date LIKE ?",
-                        new String[]{
-                                String.valueOf(workerId),
-                                month + "%"
-                        }
-                );
-
-        int result = 0;
-
-        if (c.moveToFirst()) {
-            result = c.getInt(0);
-        }
-
-        c.close();
-
-        return result;
-    }
-
-    // =========================================================
-    // ADVANCE
-    // =========================================================
-
-    public void saveAdvance(
-            int workerId,
-            double amount,
-            String date,
-            String note
-    ) {
-
-        ContentValues values =
-                new ContentValues();
-
-        values.put("worker_id", workerId);
-        values.put("amount", amount);
-        values.put("date", date);
-        values.put("note", note);
-
-        getWritableDatabase().insert(
-                "advances",
-                null,
-                values
-        );
-    }
-
-    public double advances(int workerId) {
-
-        return queryDouble(
-                "SELECT COALESCE(SUM(amount),0) " +
-                        "FROM advances WHERE worker_id=?",
-                workerId
-        );
-    }
-
-    // =========================================================
-    // SALARY
-    // =========================================================
-
-    public double salaryForMonth(
-            Worker worker,
-            String month
-    ) {
-
-        if (worker.monthlySalary > 0) {
-
-            return worker.monthlySalary;
-        }
-
-        int present =
-                presentDays(
-                        worker.id,
-                        month
-                );
-
-        int half =
-                halfDayDays(
-                        worker.id,
-                        month
-                );
-
-        return
-                (present * worker.dailySalary) +
-                (half * worker.dailySalary * 0.5);
-    }
-
-    public double salaryBalance(
-            Worker worker,
-            String month
-    ) {
-
-        double salary =
-                salaryForMonth(
-                        worker,
-                        month
-                );
-
-        double advance =
-                advances(worker.id);
-
-        return Math.max(
-                0,
-                salary - advance
-        );
-    }
-
-    public String workerReport(
-            Worker worker,
-            String month
-    ) {
-
-        int present =
-                presentDays(
-                        worker.id,
-                        month
-                );
-
-        int half =
-                halfDayDays(
-                        worker.id,
-                        month
-                );
-
-        int absent =
-                absentDays(
-                        worker.id,
-                        month
-                );
-
-        double salary =
-                salaryForMonth(
-                        worker,
-                        month
-                );
-
-        double advance =
-                advances(worker.id);
-
-        double balance =
-                Math.max(
-                        0,
-                        salary - advance
-                );
-
-        return
-                "WORKER: " +
-                        worker.name +
-
-                        "\nPresent: " +
-                        present +
-
-                        "\nHalf Day: " +
-                        half +
-
-                        "\nAbsent: " +
-                        absent +
-
-                        "\nDaily Salary: ₹" +
-                        fmt(worker.dailySalary) +
-
-                        "\nMonthly Salary: ₹" +
-                        fmt(worker.monthlySalary) +
-
-                        "\nSalary: ₹" +
-                        fmt(salary) +
-
-                        "\nAdvance: ₹" +
-                        fmt(advance) +
-
-                        "\nBALANCE: ₹" +
-                        fmt(balance);
-    }
-
-    // =========================================================
-    // DASHBOARD
-    // =========================================================
-
-    public String dashboard() {
-
-        double totalKw = 0;
-        double totalValue = 0;
-        double totalCollection = 0;
-        double totalExpenses = 0;
-
-        ArrayList<Project> list =
-                projects();
-
-        for (Project p : list) {
-
-            totalKw += p.kw;
-            totalValue += p.amount;
-
-            totalCollection +=
-                    collection(p.id);
-
-            totalExpenses +=
-                    expenses(p.id);
-        }
-
-        double pending =
-                Math.max(
-                        0,
-                        totalValue -
-                                totalCollection
-                );
-
-        double profit =
-                totalValue -
-                        totalExpenses;
-
-        return
-                "📊 EDISON SOLAR DASHBOARD\n\n" +
-
-                "Projects: " +
-                list.size() +
-
-                "\nTotal Solar: " +
-                fmt(totalKw) +
-                " kW" +
-
-                "\nProject Value: ₹" +
-                fmt(totalValue) +
-
-                "\nCollection: ₹" +
-                fmt(totalCollection) +
-
-                "\nPending: ₹" +
-                fmt(pending) +
-
-                "\nExpenses: ₹" +
-                fmt(totalExpenses) +
-
-                "\nSite Profit: ₹" +
-                fmt(profit);
-    }
-
-    // =========================================================
-    // HELPERS
-    // =========================================================
-
-    private double queryDouble(
-            String sql,
-            int id
-    ) {
-
-        Cursor c =
-                getReadableDatabase().rawQuery(
-                        sql,
-                        new String[]{
-                                String.valueOf(id)
-                        }
-                );
-
-        double value = 0;
-
-        if (c.moveToFirst()) {
-            value = c.getDouble(0);
-        }
-
-        c.close();
-
-        return value;
-    }
-
-    private String safe(String value) {
-
-        return value == null
-                ? ""
-                : value;
-    }
-
-    public static String fmt(double value) {
-
-        if (
-                Math.abs(
-                        value -
-                                Math.round(value)
-                ) < 0.00001
-        ) {
-
-            return String.format(
-                    Locale.getDefault(),
-                    "%.0f",
-                    value
-            );
-        }
-
-        return String.format(
-                Locale.getDefault(),
-                "%.2f",
-                value
-        );
-    }
-}
-
-3. Models.java — FINAL
-package com.edisonsolar.businesspro;
-
-import android.database.Cursor;
-
-class Company {
-    int id;
-    String name = "";
-    String phone = "";
-}
-
-class Worker {
-    int id;
-    String name = "";
-    String phone = "";
-    double dailySalary = 0;
-    double monthlySalary = 0;
-}
-
-class Project {
-    int id;
-    int companyId;
-    String number = "";
-    String company = "";
-    String customer = "";
-    String phone = "";
-    String site = "";
-    String date = "";
-    String status = "";
-    String work = "";
-    double kw = 0;
-    double amount = 0;
-    double lat = 0;
-    double lon = 0;
-    boolean hasLoc = false;
-
-    static Project from(Cursor c) {
-        Project p = new Project();
-        p.id = c.getInt(0);
-        p.companyId = c.getInt(1);
-        p.number = c.getString(2);
-        p.company = c.getString(3);
-        p.customer = c.getString(4);
-        p.phone = c.getString(5);
-        p.site = c.getString(6);
-        p.kw = c.getDouble(7);
-        p.amount = c.getDouble(8);
-        p.date = c.getString(9);
-        p.status = c.getString(10);
-        p.work = c.getString(11);
-        p.lat = c.getDouble(12);
-        p.lon = c.getDouble(13);
-        p.hasLoc = c.getInt(14) == 1;
-        return p;
-    }
-}
-
-
