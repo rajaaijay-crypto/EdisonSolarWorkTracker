@@ -125,8 +125,364 @@ void workers(String month){page("Workers / Attendance");root.addView(button("+ A
 void workersMonthlyCards(String month){double totalSalary=0,totalAdvance=0;int totalWorkers=0;android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);while(c.moveToNext()){totalWorkers++;int id=c.getInt(0);double daily=c.getDouble(2),monthly=c.getDouble(3);int present=countAtt(id,month,"Present"),half=countAtt(id,month,"Half Day"),absent=countAtt(id,month,"Absent");double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);double advance=sumAdvance(id,month);totalSalary+=salary;totalAdvance+=advance;root.addView(card("👷 "+safe(c.getString(1))+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nGross Salary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending Balance: ₹"+fmt(salary-advance)));final int wid=id;root.addView(button("Payment / Advance History",BLUE,v->workerHistory(wid,month)));}c.close();root.addView(card("TOTAL WORKERS: "+totalWorkers+"\nTOTAL SALARY: ₹"+fmt(totalSalary)+"\nTOTAL ADVANCE: ₹"+fmt(totalAdvance)+"\nTOTAL PENDING: ₹"+fmt(totalSalary-totalAdvance)));}
 void workerDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Worker Name",""),p=field("Phone",""),d=field("Daily Salary ₹","0"),m=field("Monthly Salary ₹","0");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));d.setText(c.getString(2));m.setText(c.getString(3));}c.close();}l.addView(n);l.addView(p);l.addView(d);l.addView(m);AlertDialog x=new AlertDialog.Builder(this).setTitle(id==0?"Add Worker":"Edit Worker").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();x.setOnShowListener(q->x.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString());cv.put("phone",p.getText().toString());cv.put("daily_salary",num(d.getText().toString()));cv.put("monthly_salary",num(m.getText().toString()));if(id==0)w().insert("workers",null,cv);else w().update("workers",cv,"id=?",new String[]{""+id});x.dismiss();workers();}));x.show();}
 
-    void attendance(String date){page("Attendance • "+date);EditText df=field("Date YYYY-MM-DD",date);root.addView(df);root.addView(button("🔄 Open Date",BLUE,v->attendance(df.getText().toString().trim())));root.addView(button("+ Add Attendance",PURPLE,v->attendanceDialog(date,0)));android.database.Cursor c=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);while(c.moveToNext()){int wid=c.getInt(0);String name=c.getString(1);android.database.Cursor q=r().rawQuery("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});String st="Not marked",site="",note="";int aid=0;if(q.moveToFirst()){aid=q.getInt(0);st=safe(q.getString(1));site=safe(q.getString(2));note=safe(q.getString(3));}q.close();root.addView(card("👷 "+name+"\nStatus: "+st+"\nSite: "+site+(note.isEmpty()?"":"\n"+note)));final int fwid=wid;root.addView(button("✏️ Edit Attendance",BLUE,v->attendanceDialog(date,fwid)));}c.close();}
-    void attendanceDialog(String date,int wid){android.database.Cursor wc=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);ArrayList<Integer> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>();while(wc.moveToNext()){ids.add(wc.getInt(0));names.add(wc.getString(1));}wc.close();if(names.isEmpty()){Toast.makeText(this,"Add worker first",Toast.LENGTH_SHORT).show();return;}LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner ws=new Spinner(this);ws.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));Spinner ss=new Spinner(this);ss.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Present","Half Day","Absent"}));EditText site=field("Project / Site",""),note=field("Note","");for(int i=0;i<ids.size();i++)if(ids.get(i)==wid)ws.setSelection(i);if(wid>0){android.database.Cursor c=r().rawQuery("SELECT status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});if(c.moveToFirst()){String oldStatus=safe(c.getString(0)); if("Half Day".equalsIgnoreCase(oldStatus)) ss.setSelection(1); else if("Absent".equalsIgnoreCase(oldStatus)) ss.setSelection(2); else ss.setSelection(0);site.setText(safe(c.getString(1)));note.setText(safe(c.getString(2)));}c.close();}l.addView(ws);l.addView(ss);l.addView(site);l.addView(note);AlertDialog d=new AlertDialog.Builder(this).setTitle("Attendance • "+date).setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{int worker=ids.get(ws.getSelectedItemPosition());ContentValues cv=new ContentValues();cv.put("worker_id",worker);cv.put("date",date);cv.put("status",ss.getSelectedItem().toString());cv.put("site",site.getText().toString());cv.put("note",note.getText().toString());long exists=0;android.database.Cursor c=r().rawQuery("SELECT id FROM attendance WHERE worker_id=? AND date=?",new String[]{""+worker,date});if(c.moveToFirst())exists=c.getLong(0);c.close();if(exists==0)w().insert("attendance",null,cv);else w().update("attendance",cv,"id=?",new String[]{""+exists});d.dismiss();attendance(date); }));d.show();}
+    void attendance(String date){
+        page("Attendance • "+date);
+        CalendarView cv=new CalendarView(this);
+        try {
+            java.util.Date d=new SimpleDateFormat("yyyy-MM-dd",Locale.getDefault()).parse(date);
+            if(d!=null) cv.setDate(d.getTime(),false,true);
+        } catch(Exception ignored) {
+            cv.setDate(System.currentTimeMillis(),false,true);
+        }
+        root.addView(cv,new LinearLayout.LayoutParams(-1,dp(330)));
+        root.addView(button("+ Add Attendance",PURPLE,v->attendanceDialog(date,0)));
+        android.database.Cursor c=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);
+        while(c.moveToNext()){
+            int wid=c.getInt(0);
+            String name=c.getString(1);
+            android.database.Cursor q=r().rawQuery("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});
+            String st="Not marked",site="",note="";
+            int aid=0;
+            if(q.moveToFirst()){aid=q.getInt(0);st=safe(q.getString(1));site=safe(q.getString(2));note=safe(q.getString(3));}
+            q.close();
+            root.addView(card("👷 "+name+"
+Status: "+st+"
+Site: "+site+(note.isEmpty()?"":"
+"+note)));
+            final int fwid=wid;
+            root.addView(button("✏️ Edit Attendance",BLUE,v->attendanceDialog(date,fwid)));
+        }
+        c.close();
+        cv.setOnDateChangeListener((view,year,month,day)->{
+            String selectedDate=String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day);
+            attendance(selectedDate);
+        });
+    }
+    void attendanceDialog(String date,int wid){android.database.Cursor wc=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);ArrayList<Integer> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>();while(wc.moveToNext()){ids.add(wc.getInt(0));names.add(wc.getString(1));}wc.close();if(names.isEmpty()){Toast.makeText(this,"Add worker first",Toast.LENGTH_SHORT).show();return;}LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner ws=new Spinner(this);ws.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));Spinner ss=new Spinner(this);ss.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Present","Half Day","Absent"}));EditText site=field("Project / Site",""),note=field("Note","");for(int i=0;i<ids.size();i++)if(ids.get(i)==wid)ws.setSelection(i);if(wid>0){android.database.Cursor c=r().rawQuery("SELECT status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});if(c.moveToFirst()){String oldStatus=safe(c.getString(0)); if("Half Day".equalsIgnoreCase(oldStatus)) ss.setSelection(1); else if("Absent".equalsIgnoreCase(oldStatus)) ss.setSelection(2); else ss.setSelection(0);site.setText(safe(c.getString(1)));note.setText(safe(c.getString(2)));}c.close();}if(wid>0)ws.setEnabled(false);
+l.addView(ws);l.addView(ss);l.addView(site);l.addView(note);
+AlertDialog d=new AlertDialog.Builder(this)
+ .setTitle("Attendance • "+date)
+ .setView(l)
+ .setNegativeButton("Cancel",null)
+ .setPositiveButton("Save",null).create();
+d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{
+ int worker=ids.get(ws.getSelectedItemPosition());
+ ContentValues cv=new ContentValues();
+ cv.put("worker_id",worker);
+ cv.put("date",date);
+ cv.put("status",ss.getSelectedItem().toString());
+ cv.put("site",site.getText().toString());
+ cv.put("note",note.getText().toString());
+
+ // One attendance record per worker per date: update existing, otherwise insert.
+ long exists=0;
+ android.database.Cursor c=r().rawQuery(
+  "SELECT id FROM attendance WHERE worker_id=? AND date=? LIMIT 1",
+  new String[]{""+worker,date});
+ if(c.moveToFirst())exists=c.getLong(0);
+ c.close();
+
+ if(exists==0){
+  w().insert("attendance",null,cv);
+ }else{
+  w().update("attendance",cv,"id=?",new String[]{""+exists});
+ }
+ d.dismiss();
+ attendance(date);
+ }));
+d.show();
+}
+
+    void salaryReport(String month){page("Salary / Advance Report");EditText mf=field("Month YYYY-MM",month);root.addView(mf);root.addView(button("🔄 Open Month",BLUE,v->salaryReport(vText(mf))));salaryCards(month);}
+    String vText(EditText e){return e.getText().toString().trim();}
+    void salaryCards(String month){
+        double ts=0,ta=0;
+        android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);
+        while(c.moveToNext()){
+            int id=c.getInt(0);
+            double daily=c.getDouble(2),monthly=c.getDouble(3);
+            int present=countAtt(id,month,"Present");
+            int half=countAtt(id,month,"Half Day");
+            int absent=countAtt(id,month,"Absent");
+            double sal=monthly>0?monthly:(present*daily)+(half*daily*0.5);
+            double adv=sumAdvance(id,month);
+            double bal=sal-adv;
+            ts+=sal; ta+=adv;
+            final int workerId=id;
+            root.addView(card("👷 "+c.getString(1)+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nSalary: ₹"+fmt(sal)+"\nAdvance: ₹"+fmt(adv)+"\nBALANCE: ₹"+fmt(bal)));
+            root.addView(button("📋 Payment / Advance History",BLUE,v->workerHistory(workerId,month)));
+        }
+        c.close();
+        root.addView(card("TOTAL SALARY: ₹"+fmt(ts)+"\nTOTAL ADVANCE: ₹"+fmt(ta)+"\nTOTAL PENDING: ₹"+fmt(ts-ta)));
+        root.addView(button("📄 Salary PDF",PURPLE,v->createPdf("Salary_"+month,salaryText(month))));
+        root.addView(button("📱 Share / WhatsApp",GREEN,v->share(salaryText(month))));
+    }
+
+    void workerHistory(int workerId,String month){
+        page("Worker Payment / Advance History");
+        android.database.Cursor wc=r().rawQuery("SELECT name,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+workerId});
+        if(!wc.moveToFirst()){wc.close();return;}
+        String name=safe(wc.getString(0)); double daily=wc.getDouble(1), monthly=wc.getDouble(2); wc.close();
+        int present=countAtt(workerId,month,"Present"),half=countAtt(workerId,month,"Half Day"),absent=countAtt(workerId,month,"Absent");
+        double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);
+        double advance=sumAdvance(workerId,month);
+        root.addView(card("👷 "+name+"\nMonth: "+month+"\nSalary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending: ₹"+fmt(salary-advance)));
+        root.addView(txt("💰 PAYMENT / WORK HISTORY",20,true));
+        android.database.Cursor a=r().rawQuery("SELECT date,status,site,note FROM attendance WHERE worker_id=? AND date LIKE ? ORDER BY date",new String[]{""+workerId,month+"%"});
+        boolean any=false;
+        while(a.moveToNext()){
+            any=true; String st=safe(a.getString(1)); double earned="Present".equalsIgnoreCase(st)?daily:("Half Day".equalsIgnoreCase(st)?daily*0.5:0);
+            root.addView(card("📅 "+safe(a.getString(0))+"\nStatus: "+st+"\nSite: "+safe(a.getString(2))+"\nEarned: ₹"+fmt(earned)+(safe(a.getString(3)).isEmpty()?"":"\nNote: "+safe(a.getString(3)))));
+        }
+        a.close(); if(!any) root.addView(card("No attendance/payment entries for this month."));
+        root.addView(txt("💵 ADVANCE HISTORY",20,true));
+        android.database.Cursor ad=r().rawQuery("SELECT date,amount,note FROM advances WHERE worker_id=? AND date LIKE ? ORDER BY date",new String[]{""+workerId,month+"%"});
+        boolean hasAdvance=false;
+        while(ad.moveToNext()){hasAdvance=true; root.addView(card("📅 "+safe(ad.getString(0))+"\nAdvance: ₹"+fmt(ad.getDouble(1))+(safe(ad.getString(2)).isEmpty()?"":"\nNote: "+safe(ad.getString(2)))));}
+        ad.close(); if(!hasAdvance) root.addView(card("No advance entries for this month."));
+    }
+
+    int countAtt(int wid,String month,String status){android.database.Cursor c=r().rawQuery("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND date LIKE ? AND status=?",new String[]{""+wid,month+"%",status});int x=c.moveToFirst()?c.getInt(0):0;c.close();return x;}
+    double sumAdvance(int wid,String month){android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=? AND date LIKE ?",new String[]{""+wid,month+"%"});double x=c.moveToFirst()?c.getDouble(0):0;c.close();return x;}
+    String salaryText(String month){
+        StringBuilder s=new StringBuilder("EDISON SOLAR WORKER SALARY REPORT\nMonth: "+month+"\n\n");
+        android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);
+        while(c.moveToNext()){
+            int id=c.getInt(0); double daily=c.getDouble(2), monthly=c.getDouble(3);
+            int present=countAtt(id,month,"Present"), half=countAtt(id,month,"Half Day"), absent=countAtt(id,month,"Absent");
+            double sal=monthly>0?monthly:(present*daily)+(half*daily*0.5); double adv=sumAdvance(id,month);
+            s.append("WORKER: ").append(c.getString(1)).append("\nPresent: ").append(present).append("\nHalf Day: ").append(half).append("\nAbsent: ").append(absent).append("\nDaily Salary: ₹").append(fmt(daily)).append("\nMonthly Salary: ₹").append(fmt(monthly)).append("\nSalary: ₹").append(fmt(sal)).append("\nAdvance: ₹").append(fmt(adv)).append("\nBALANCE: ₹").append(fmt(sal-adv)).append("\n\n");
+        } c.close(); return s.toString();
+    }
+
+    void calendar(){page("Calendar / Daily Work");CalendarView cv=new CalendarView(this);cv.setDate(System.currentTimeMillis(),false,true);root.addView(cv,new LinearLayout.LayoutParams(-1,dp(330)));TextView selected=txt("",21,true);root.addView(selected);Calendar cal=Calendar.getInstance();String initial=new SimpleDateFormat("yyyy-MM-dd",Locale.getDefault()).format(cal.getTime());showCalendarDate(initial,selected);cv.setOnDateChangeListener((view,year,month,day)->{String date=String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day);showCalendarDate(date,selected);});}
+void showCalendarDate(String date,TextView selected){
+ selected.setText("DATE: "+date);
+ // Keep page header, CalendarView and selected-date label.
+ // Remove only the old attendance cards.
+ if(root.getChildCount()>3)root.removeViews(3,root.getChildCount()-3);
+ android.database.Cursor c=r().rawQuery(
+  "SELECT a.status,a.site,w.name FROM attendance a LEFT JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY w.name",
+  new String[]{date});
+ boolean f=false;
+ while(c.moveToNext()){
+  f=true;
+  root.addView(card(" "+safe(c.getString(2))+
+   "\nStatus: "+safe(c.getString(0))+
+   "\nSite: "+safe(c.getString(1))));
+ }
+ c.close();
+ if(!f)root.addView(card("No attendance for this date."));
+}
+void calendarDate(String date){if(root==null)return;TextView t=txt("",21,true);root.addView(t);showCalendarDate(date,t);}
+    void reports(){page("Reports / PDF");root.addView(card(dashboardText()));root.addView(button("📄 All Projects PDF",PURPLE,v->createPdf("Projects",allProjectsText())));root.addView(button("📱 Share Project Summary",GREEN,v->share(allProjectsText())));root.addView(button("💰 Salary Report",BLUE,v->salaryReport(iso().substring(0,7))));}
+    String allProjectsText(){StringBuilder s=new StringBuilder();for(Project p:projectList())s.append(projectReport(p)).append("\n----------------\n");return s.toString();}
+
+    void createPdf(String name,String text){try{PdfDocument doc=new PdfDocument();Paint paint=new Paint();paint.setColor(Color.BLACK);paint.setTextSize(dp(11));String[] lines=text.split("\n",-1);int pn=1,y=dp(45);PdfDocument.Page page=doc.startPage(new PdfDocument.PageInfo.Builder(dp(595),dp(842),pn).create());Canvas c=page.getCanvas();c.drawText("EDISON SOLAR",dp(35),dp(25),paint);for(String line:lines){if(y>dp(805)){doc.finishPage(page);pn++;page=doc.startPage(new PdfDocument.PageInfo.Builder(dp(595),dp(842),pn).create());c=page.getCanvas();y=dp(45);}c.drawText(line.length()>85?line.substring(0,85):line,dp(35),y,paint);y+=dp(18);}doc.finishPage(page);File dir=new File(getCacheDir(),"reports");dir.mkdirs();File f=new File(dir,name+".pdf");FileOutputStream out=new FileOutputStream(f);doc.writeTo(out);out.close();doc.close();Uri u=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",f);Intent i=new Intent(Intent.ACTION_SEND);i.setType("application/pdf");i.putExtra(Intent.EXTRA_STREAM,u);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(Intent.createChooser(i,"Send PDF"));}catch(Exception e){Toast.makeText(this,"PDF error: "+e.getMessage(),Toast.LENGTH_LONG).show();}}
+    void createPdf(String name,String text,boolean ignored){createPdf(name,text);}
+    void pdf(Project p){createPdf("Project_"+p.number,projectReport(p));}
+    void share(String text){Intent i=new Intent(Intent.ACTION_SEND);i.setType("text/plain");i.putExtra(Intent.EXTRA_TEXT,text);startActivity(Intent.createChooser(i,"Share / WhatsApp"));}
+
+    void gps(Project p){if(ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.ACCESS_FINE_LOCATION},101);return;}LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);Location loc=null;try{if(lm.isProviderEnabled(LocationManager.GPS_PROVIDER))loc=lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);if(loc==null&&lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))loc=lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);}catch(Exception ignored){}if(loc==null){Toast.makeText(this,"Location not available",Toast.LENGTH_LONG).show();return;}Uri u=Uri.parse("geo:"+loc.getLatitude()+","+loc.getLongitude()+"?q="+loc.getLatitude()+","+loc.getLongitude());try{startActivity(new Intent(Intent.ACTION_VIEW,u));}catch(Exception e){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://maps.google.com/?q="+loc.getLatitude()+","+loc.getLongitude())));}}
+    void photos(Project p){photoProject=p;page("Project Photos");root.addView(card("☀️ "+p.number+"\n"+p.customer));root.addView(button("📷 Take Photo",BLUE,v->takePhoto()));root.addView(button("🖼 Choose Photo",PURPLE,v->choosePhoto()));android.database.Cursor c=r().rawQuery("SELECT uri FROM photos WHERE project_id=? ORDER BY id DESC",new String[]{""+p.id});while(c.moveToNext())root.addView(card("📷 Saved Photo\n"+safe(c.getString(0))));c.close();}
+    void takePhoto(){if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.CAMERA},102);return;}try{File f=new File(getExternalFilesDir(null),"photo_"+System.currentTimeMillis()+".jpg");cameraUri=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",f);Intent i=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);i.putExtra(MediaStore.EXTRA_OUTPUT,cameraUri);i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,201);}catch(Exception e){Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();}}
+    void choosePhoto(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,202);}
+    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||photoProject==null)return;Uri u=req==201?cameraUri:(data==null?null:data.getData());if(u!=null){ContentValues cv=new ContentValues();cv.put("project_id",photoProject.id);cv.put("uri",u.toString());w().insert("photos",null,cv);photos(photoProject);}}
+}
+package com.edisonsolar.businesspro;
+
+import android.Manifest;
+import android.app.*;
+import android.content.*;
+import android.content.pm.PackageManager;
+import android.graphics.*;
+import android.graphics.pdf.PdfDocument;
+import android.location.Location;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.provider.MediaStore;
+import android.view.*;
+import android.widget.*;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+public class MainActivity extends Activity {
+    DBHelper db; LinearLayout root; Project photoProject; Uri cameraUri;
+    final int BLUE=Color.rgb(11,94,215),GREEN=Color.rgb(25,135,84),ORANGE=Color.rgb(240,138,36),PURPLE=Color.rgb(111,66,193),RED=Color.rgb(220,53,69),DARK=Color.rgb(23,50,77),BG=Color.rgb(245,249,253);
+    int dp(int n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
+    @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(Color.WHITE);getWindow().setNavigationBarColor(Color.WHITE);db=new DBHelper(this);home();}
+    @Override public void onBackPressed(){home();}
+    TextView txt(String s,float z,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(DARK);t.setTypeface(null,bold?Typeface.BOLD:Typeface.NORMAL);t.setPadding(dp(10),dp(8),dp(10),dp(8));return t;}
+    EditText field(String h,String v){EditText e=new EditText(this);e.setHint(h);e.setText(v);e.setTextSize(17);e.setTextColor(DARK);e.setPadding(dp(12),dp(8),dp(12),dp(8));return e;}
+    Button button(String s,int color,View.OnClickListener l){Button b=new Button(this);b.setText(s);b.setTextSize(17);b.setTypeface(null,Typeface.BOLD);b.setTextColor(Color.WHITE);b.setAllCaps(false);b.setMinHeight(dp(60));b.setOnClickListener(l);android.graphics.drawable.GradientDrawable g=new android.graphics.drawable.GradientDrawable();g.setColor(color);g.setCornerRadius(dp(16));b.setBackground(g);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(62));p.setMargins(dp(4),dp(7),dp(4),dp(7));b.setLayoutParams(p);return b;}
+    TextView card(String s){TextView t=txt(s,17,true);t.setBackgroundColor(Color.WHITE);t.setPadding(dp(14),dp(13),dp(14),dp(13));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(dp(4),dp(6),dp(4),dp(6));t.setLayoutParams(p);return t;}
+    void page(String title){ScrollView sv=new ScrollView(this);sv.setFillViewport(true);root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(14),dp(14),dp(14),dp(30));root.setBackgroundColor(BG);LinearLayout h=new LinearLayout(this);h.setGravity(Gravity.CENTER_VERTICAL);Button back=new Button(this);back.setText("←");back.setTextSize(30);back.setTextColor(DARK);back.setBackgroundColor(Color.TRANSPARENT);back.setOnClickListener(v->home());h.addView(back,new LinearLayout.LayoutParams(dp(58),dp(64)));h.addView(txt(title,24,true),new LinearLayout.LayoutParams(0,dp(64),1));root.addView(h);sv.addView(root);setContentView(sv);}
+    String safe(String s){return s==null?"":s;} double num(String s){try{return Double.parseDouble(s.trim().replace(",",""));}catch(Exception e){return 0;}} String fmt(double x){return DBHelper.fmt(x);} String today(){return new SimpleDateFormat("dd-MM-yyyy",Locale.getDefault()).format(new Date());} String iso(){return new SimpleDateFormat("yyyy-MM-dd",Locale.getDefault()).format(new Date());}
+    android.database.sqlite.SQLiteDatabase r(){return db.getReadableDatabase();} android.database.sqlite.SQLiteDatabase w(){return db.getWritableDatabase();}
+    void confirm(String s,Runnable yes){new AlertDialog.Builder(this).setMessage(s).setNegativeButton("Cancel",null).setPositiveButton("OK",(d,x)->yes.run()).show();}
+
+    void home(){page("EDISON SOLAR MANAGER PRO");ImageView logo=new ImageView(this);int id=getResources().getIdentifier("edison_solar_logo","drawable",getPackageName());if(id!=0)logo.setImageResource(id);logo.setAdjustViewBounds(true);logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);root.addView(logo,new LinearLayout.LayoutParams(-1,dp(150)));root.addView(card(dashboardText()));root.addView(button("🏢  Companies",BLUE,v->companies()));root.addView(button("☀️  Projects",BLUE,v->projects()));root.addView(button("👷  Workers / Attendance",PURPLE,v->workers()));root.addView(button("💰  Payment Collection",GREEN,v->payments()));root.addView(button("🧾  Expenses",ORANGE,v->expenses()));root.addView(button("📅  Calendar",PURPLE,v->calendar()));root.addView(button("📊  Reports / PDF",PURPLE,v->reports()));}
+String dashboardText(){double kw=0;int pc=0;android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(kw),0),COUNT(*) FROM projects",null);if(c.moveToFirst()){kw=c.getDouble(0);pc=c.getInt(1);}c.close();return "📊 DASHBOARD\nTotal Projects: "+pc+"\nTotal Solar: "+fmt(kw)+" kW";}
+
+    void companies(){page("Companies");root.addView(button("+ Add Company",BLUE,v->companyDialog(0)));android.database.Cursor c=r().rawQuery("SELECT id,name,phone FROM companies ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);String name=safe(c.getString(1)),phone=safe(c.getString(2));root.addView(card(name+"\nPhone: "+phone));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->companyDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete company?",()->{w().delete("companies","id=?",new String[]{""+id});companies();})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
+    void companyDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Company Name","");EditText p=field("Phone","");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone FROM companies WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));}c.close();}l.addView(n);l.addView(p);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Company":"Edit Company").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString().trim());cv.put("phone",p.getText().toString().trim());if(id==0)w().insert("companies",null,cv);else w().update("companies",cv,"id=?",new String[]{""+id});d.dismiss();companies();}));d.show();}
+
+    ArrayList<Project> projectList(){return db.projects();}
+    void projects(){projects(iso().substring(0,7));}
+void projects(String month){page("Projects");root.addView(button("+ Add Project",BLUE,v->projectDialog(0)));root.addView(txt("SELECT MONTH",19,true));root.addView(button("📅  Select Month: "+month,BLUE,v->monthPicker(month,m->projects(m))));double totalKw=0;int totalProjects=0;for(Project p:projectList()){if(!projectInMonth(p,month))continue;totalProjects++;totalKw+=p.kw;root.addView(card(projectSummary(p)));root.addView(button("📊 Full Project Report",BLUE,v->projectFullReport(p)));root.addView(button("✏️ Edit / Manage",PURPLE,v->projectMenu(p)));}root.addView(card("MONTH TOTAL\nProjects: "+totalProjects+"\nSolar: "+fmt(totalKw)+" kW"));}
+boolean projectInMonth(Project p,String month){String d=safe(p.date);if(d.matches("\\d{4}-\\d{2}-\\d{2}"))return d.startsWith(month);if(d.matches("\\d{2}-\\d{2}-\\d{4}"))return d.substring(6,10).equals(month.substring(0,4))&&d.substring(3,5).equals(month.substring(5,7));return false;}
+void monthPicker(String current,final MonthResult result){String[] parts=current.split("-");int year=parts.length>0?numInt(parts[0]):Calendar.getInstance().get(Calendar.YEAR);int month=parts.length>1?numInt(parts[1])-1:Calendar.getInstance().get(Calendar.MONTH);LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);NumberPicker mp=new NumberPicker(this);mp.setMinValue(1);mp.setMaxValue(12);mp.setValue(month+1);NumberPicker yp=new NumberPicker(this);yp.setMinValue(2020);yp.setMaxValue(2100);yp.setValue(year);l.addView(mp,new LinearLayout.LayoutParams(0,dp(90),1));l.addView(yp,new LinearLayout.LayoutParams(0,dp(90),1));new AlertDialog.Builder(this).setTitle("Select Month").setView(l).setNegativeButton("Cancel",null).setPositiveButton("OK",(d,w)->result.onMonth(String.format(Locale.US,"%04d-%02d",yp.getValue(),mp.getValue()))).show();}
+interface MonthResult{void onMonth(String month);}
+int numInt(String s){try{return Integer.parseInt(s);}catch(Exception e){return 0;}}
+String projectSummary(Project p){double col=sum("payments",p.id),ex=sum("expenses",p.id),sal=projectSalary(p);return "☀️ PROJECT: "+p.number+"\nCustomer: "+safe(p.customer)+"\nCompany: "+safe(p.company)+"\nSite: "+safe(p.site)+"\n⚡ Solar: "+fmt(p.kw)+" kW\n💰 Collection: ₹"+fmt(col)+"\n💸 Expenses: ₹"+fmt(ex)+"\n👷 Work Days: "+projectDays(p)+"\n👷 Site Salary: ₹"+fmt(sal)+"\n📊 Profit: ₹"+fmt(col-ex-sal)+"\n🔴 Pending: ₹"+fmt(Math.max(0,p.amount-col))+"\n📅 Date: "+safe(p.date);}
+    double sum(String table,int pid){android.database.Cursor c=r().rawQuery("SELECT COALESCE(SUM(amount),0) FROM "+table+" WHERE project_id=?",new String[]{""+pid});double x=c.moveToFirst()?c.getDouble(0):0;c.close();return x;}
+    int projectDays(Project p){android.database.Cursor c=r().rawQuery("SELECT COUNT(DISTINCT date) FROM attendance WHERE status IN ('Present','Half Day') AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});int x=c.moveToFirst()?c.getInt(0):0;c.close();return x;}
+    double projectSalary(Project p){double x=0;android.database.Cursor c=r().rawQuery("SELECT worker_id,status FROM attendance WHERE status IN ('Present','Half Day') AND (site=? OR site LIKE ? OR site LIKE ?)",new String[]{p.site,p.number+"%","%"+p.number+"%"});while(c.moveToNext()){android.database.Cursor q=r().rawQuery("SELECT daily_salary FROM workers WHERE id=?",new String[]{""+c.getInt(0)});if(q.moveToFirst()){double daily=q.getDouble(0);x+="Half Day".equalsIgnoreCase(c.getString(1))?daily*0.5:daily;}q.close();}c.close();return x;}
+    void projectDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);String[] v={"","","","","0","0",today(),"Pending",""};if(id>0){android.database.Cursor c=r().rawQuery("SELECT company,customer,phone,site,kw,amount,date,status,work FROM projects WHERE id=?",new String[]{""+id});if(c.moveToFirst())for(int i=0;i<9;i++)v[i]=safe(c.getString(i));c.close();}EditText co=field("Company",v[0]),cu=field("Customer",v[1]),ph=field("Phone",v[2]),si=field("Site",v[3]),kw=field("Solar kW",v[4]),am=field("Project Amount",v[5]),da=field("Date",v[6]),st=field("Status",v[7]),wo=field("Work Detail",v[8]);l.addView(co);l.addView(cu);l.addView(ph);l.addView(si);l.addView(kw);l.addView(am);l.addView(da);l.addView(st);l.addView(wo);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Project":"Edit Project").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(b->{if(cu.getText().toString().trim().isEmpty()){cu.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("company",co.getText().toString());cv.put("customer",cu.getText().toString());cv.put("phone",ph.getText().toString());cv.put("site",si.getText().toString());cv.put("kw",num(kw.getText().toString()));cv.put("amount",num(am.getText().toString()));cv.put("date",da.getText().toString());cv.put("status",st.getText().toString());cv.put("work",wo.getText().toString());if(id==0){long nid=w().insert("projects",null,cv);ContentValues n=new ContentValues();n.put("number",String.format(Locale.US,"ES-%04d",nid));w().update("projects",n,"id=?",new String[]{""+nid});}else w().update("projects",cv,"id=?",new String[]{""+id});d.dismiss();projects();}));d.show();}
+    void projectMenu(Project p){String[] a={"✏️ Edit Project","💰 Payments","🧾 Expenses","📷 Photos","📍 GPS / Map","📄 PDF","📱 Share / WhatsApp","🗑 Delete"};new AlertDialog.Builder(this).setTitle(p.customer).setItems(a,(d,i)->{if(i==0)projectDialog(p.id);else if(i==1)projectPayments(p);else if(i==2)projectExpenses(p);else if(i==3)photos(p);else if(i==4)gps(p);else if(i==5)pdf(p);else if(i==6)share(projectReport(p));else confirm("Delete project?",()->{w().delete("projects","id=?",new String[]{""+p.id});projects();});}).show();}
+
+    void projectFullReport(Project p){page("Project Report");root.addView(card(projectSummary(p)));root.addView(txt("💰 Collection History",20,true));showPayments(p);root.addView(txt("💸 Expense History",20,true));showExpenses(p);root.addView(txt("👷 Workers / Salary",20,true));showProjectWorkers(p);root.addView(button("📄 Generate Project PDF",PURPLE,v->pdf(p)));root.addView(button("📱 Share Project Report",GREEN,v->share(projectReport(p))));}
+
+    void showProjectWorkers(Project p){
+        android.database.Cursor c = r().rawQuery(
+                "SELECT a.worker_id," +
+                "SUM(CASE WHEN a.status='Present' THEN 1 ELSE 0 END)," +
+                "SUM(CASE WHEN a.status='Half Day' THEN 1 ELSE 0 END)," +
+                "SUM(CASE WHEN a.status='Absent' THEN 1 ELSE 0 END) " +
+                "FROM attendance a " +
+                "WHERE a.status IN ('Present','Half Day','Absent') " +
+                "AND (a.site=? OR a.site LIKE ? OR a.site LIKE ?) " +
+                "GROUP BY a.worker_id",
+                new String[]{p.site,p.number+"%","%"+p.number+"%"});
+
+        if(!c.moveToFirst()){
+            root.addView(card("No worker attendance for this project."));
+            c.close();
+            return;
+        }
+
+        do{
+            int wid = c.getInt(0);
+            int present = c.getInt(1);
+            int halfDay = c.getInt(2);
+            int absent = c.getInt(3);
+
+            String name = "Worker";
+            double dailySalary = 0;
+
+            android.database.Cursor q = r().rawQuery(
+                    "SELECT name,daily_salary FROM workers WHERE id=?",
+                    new String[]{""+wid});
+
+            if(q.moveToFirst()){
+                name = safe(q.getString(0));
+                dailySalary = q.getDouble(1);
+            }
+            q.close();
+
+            double salary = (present * dailySalary) + (halfDay * dailySalary * 0.5);
+
+            root.addView(card(
+                    "👷 " + name +
+                    "\nPresent: " + present +
+                    "\nHalf Day: " + halfDay +
+                    "\nAbsent: " + absent +
+                    "\nSalary: ₹" + fmt(salary)
+            ));
+        }while(c.moveToNext());
+
+        c.close();
+    }
+
+    String projectReport(Project p){StringBuilder s=new StringBuilder("EDISON SOLAR MANAGER PRO\n\n");s.append(projectSummary(p)).append("\n\nCOLLECTION HISTORY\n");android.database.Cursor c=r().rawQuery("SELECT date,amount,mode,note FROM payments WHERE project_id=? ORDER BY date,id",new String[]{""+p.id});while(c.moveToNext())s.append(c.getString(0)).append(" | ₹").append(fmt(c.getDouble(1))).append(" | ").append(safe(c.getString(2))).append("\n");c.close();s.append("\nEXPENSE HISTORY\n");c=r().rawQuery("SELECT date,category,amount,note FROM expenses WHERE project_id=? ORDER BY date,id",new String[]{""+p.id});while(c.moveToNext())s.append(c.getString(0)).append(" | ").append(safe(c.getString(1))).append(" | ₹").append(fmt(c.getDouble(2))).append("\n");c.close();return s.toString();}
+
+    void payments(){page("Payment Collection");for(Project p:projectList()){root.addView(card(projectSummary(p)));root.addView(button("💰 Add / Edit Collection",GREEN,v->projectPayments(p)));}}
+    void projectPayments(Project p){page("Payments / Collection");root.addView(card(projectSummary(p)));root.addView(button("+ Add Collection",GREEN,v->paymentDialog(p,0)));showPayments(p);}
+    void showPayments(Project p){android.database.Cursor c=r().rawQuery("SELECT id,date,amount,mode,note FROM payments WHERE project_id=? ORDER BY date DESC,id DESC",new String[]{""+p.id});if(!c.moveToFirst()){root.addView(card("No collection entries."));c.close();return;}do{int id=c.getInt(0);root.addView(card("📅 "+c.getString(1)+"\n💰 ₹"+fmt(c.getDouble(2))+"\n💳 "+safe(c.getString(3))+"\n"+safe(c.getString(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->paymentDialog(p,id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete collection?",()->{w().delete("payments","id=?",new String[]{""+id});projectPayments(p);})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}while(c.moveToNext());c.close();}
+    void paymentDialog(Project p,int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText am=field("Collection Amount ₹",""),da=field("Date YYYY-MM-DD",iso()),no=field("Note","");Spinner mode=new Spinner(this);String[] modes={"Cash","UPI","Bank Transfer","Cheque","Other"};ArrayAdapter<String>a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,modes);mode.setAdapter(a);if(id>0){android.database.Cursor c=r().rawQuery("SELECT amount,date,mode,note FROM payments WHERE id=?",new String[]{""+id});if(c.moveToFirst()){am.setText(c.getString(0));da.setText(c.getString(1));no.setText(safe(c.getString(3)));for(int i=0;i<modes.length;i++)if(modes[i].equalsIgnoreCase(safe(c.getString(2))))mode.setSelection(i);}c.close();}l.addView(am);l.addView(da);l.addView(mode);l.addView(no);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Collection":"Edit Collection").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{double value=num(am.getText().toString());if(value<=0){am.setError("Enter amount");return;}ContentValues cv=new ContentValues();cv.put("project_id",p.id);cv.put("amount",value);cv.put("date",da.getText().toString());cv.put("mode",mode.getSelectedItem().toString());cv.put("note",no.getText().toString());if(id==0)w().insert("payments",null,cv);else w().update("payments",cv,"id=?",new String[]{""+id});d.dismiss();projectPayments(p);}));d.show();}
+
+    void expenses(){page("Expenses");root.addView(button("+ Add Expense",ORANGE,v->expenseDialog(null,0)));boolean found=false;for(Project p:projectList()){android.database.Cursor c=r().rawQuery("SELECT COUNT(*) FROM expenses WHERE project_id=?",new String[]{""+p.id});int n=c.moveToFirst()?c.getInt(0):0;c.close();if(n>0){found=true;root.addView(card("☀️ "+p.number+" • "+p.customer+"\n💸 ₹"+fmt(sum("expenses",p.id))));showExpenses(p);}}if(!found)root.addView(card("No expenses added yet."));}
+    void projectExpenses(Project p){page("Project Expenses");root.addView(card(projectSummary(p)));root.addView(button("+ Add Expense",ORANGE,v->expenseDialog(p,0)));showExpenses(p);}
+    void showExpenses(Project p){android.database.Cursor c=r().rawQuery("SELECT id,date,category,amount,note FROM expenses WHERE project_id=? ORDER BY date DESC,id DESC",new String[]{""+p.id});while(c.moveToNext()){int id=c.getInt(0);root.addView(card("📅 "+c.getString(1)+"\n📂 "+safe(c.getString(2))+"\n💸 ₹"+fmt(c.getDouble(3))+"\n"+safe(c.getString(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->expenseDialog(p,id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete expense?",()->{w().delete("expenses","id=?",new String[]{""+id});projectExpenses(p);})),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
+    void expenseDialog(Project selected,int id){ArrayList<Project> ps=projectList();LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner sp=new Spinner(this);ArrayList<String> names=new ArrayList<>();names.add("Select Project / Site");for(Project p:ps)names.add(p.number+" • "+p.customer);sp.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));EditText am=field("Expense Amount ₹",""),da=field("Date YYYY-MM-DD",iso()),no=field("Note","");Spinner type=new Spinner(this);String[] types={"Other","Material","Labour","Tea","Lunch","Transportation","Fuel","Tools","Travel","Site Expense"};type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,types));if(id>0){android.database.Cursor c=r().rawQuery("SELECT project_id,amount,category,date,note FROM expenses WHERE id=?",new String[]{""+id});if(c.moveToFirst()){int pid=c.getInt(0);for(int i=0;i<ps.size();i++)if(ps.get(i).id==pid)sp.setSelection(i+1);am.setText(c.getString(1));da.setText(c.getString(3));no.setText(safe(c.getString(4)));for(int i=0;i<types.length;i++)if(types[i].equalsIgnoreCase(safe(c.getString(2))))type.setSelection(i);}c.close();}else if(selected!=null)for(int i=0;i<ps.size();i++)if(ps.get(i).id==selected.id)sp.setSelection(i+1);l.addView(sp);l.addView(am);l.addView(type);l.addView(da);l.addView(no);AlertDialog d=new AlertDialog.Builder(this).setTitle(id==0?"Add Expense":"Edit Expense").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{if(sp.getSelectedItemPosition()<=0){Toast.makeText(this,"Select Project",Toast.LENGTH_SHORT).show();return;}double value=num(am.getText().toString());if(value<=0){am.setError("Enter amount");return;}int pid=ps.get(sp.getSelectedItemPosition()-1).id;ContentValues cv=new ContentValues();cv.put("project_id",pid);cv.put("amount",value);cv.put("category",type.getSelectedItem().toString());cv.put("date",da.getText().toString());cv.put("note",no.getText().toString());if(id==0)w().insert("expenses",null,cv);else w().update("expenses",cv,"id=?",new String[]{""+id});d.dismiss();if(selected!=null)projectExpenses(selected);else expenses();}));d.show();}
+
+    void workers(){workers(iso().substring(0,7));}
+void workers(String month){page("Workers / Attendance");root.addView(button("+ Add Worker",PURPLE,v->workerDialog(0)));root.addView(button("📅 Attendance",BLUE,v->attendance(iso())));root.addView(button("💰 Salary / Advance",GREEN,v->salaryReport(month)));root.addView(txt("MONTHLY WORKER DETAILS",20,true));root.addView(button("📅  Select Month: "+month,GREEN,v->monthPicker(month,m->workers(m))));workersMonthlyCards(month);root.addView(txt("WORKER MASTER LIST",20,true));android.database.Cursor c=r().rawQuery("SELECT id,name,phone,daily_salary,monthly_salary FROM workers ORDER BY name",null);while(c.moveToNext()){int id=c.getInt(0);root.addView(card("👷 "+c.getString(1)+"\nPhone: "+safe(c.getString(2))+"\nDaily: ₹"+fmt(c.getDouble(3))+"\nMonthly: ₹"+fmt(c.getDouble(4))));LinearLayout row=new LinearLayout(this);row.addView(button("✏️ Edit",BLUE,v->workerDialog(id)),new LinearLayout.LayoutParams(0,dp(62),1));row.addView(button("🗑 Delete",RED,v->confirm("Delete worker?",()->{w().delete("workers","id=?",new String[]{""+id});workers(month); })),new LinearLayout.LayoutParams(0,dp(62),1));root.addView(row);}c.close();}
+void workersMonthlyCards(String month){double totalSalary=0,totalAdvance=0;int totalWorkers=0;android.database.Cursor c=r().rawQuery("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name",null);while(c.moveToNext()){totalWorkers++;int id=c.getInt(0);double daily=c.getDouble(2),monthly=c.getDouble(3);int present=countAtt(id,month,"Present"),half=countAtt(id,month,"Half Day"),absent=countAtt(id,month,"Absent");double salary=monthly>0?monthly:(present*daily)+(half*daily*0.5);double advance=sumAdvance(id,month);totalSalary+=salary;totalAdvance+=advance;root.addView(card("👷 "+safe(c.getString(1))+"\nPresent: "+present+"\nHalf Day: "+half+"\nAbsent: "+absent+"\nDaily Salary: ₹"+fmt(daily)+"\nMonthly Salary: ₹"+fmt(monthly)+"\nGross Salary: ₹"+fmt(salary)+"\nAdvance: ₹"+fmt(advance)+"\nPending Balance: ₹"+fmt(salary-advance)));final int wid=id;root.addView(button("Payment / Advance History",BLUE,v->workerHistory(wid,month)));}c.close();root.addView(card("TOTAL WORKERS: "+totalWorkers+"\nTOTAL SALARY: ₹"+fmt(totalSalary)+"\nTOTAL ADVANCE: ₹"+fmt(totalAdvance)+"\nTOTAL PENDING: ₹"+fmt(totalSalary-totalAdvance)));}
+void workerDialog(int id){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=field("Worker Name",""),p=field("Phone",""),d=field("Daily Salary ₹","0"),m=field("Monthly Salary ₹","0");if(id>0){android.database.Cursor c=r().rawQuery("SELECT name,phone,daily_salary,monthly_salary FROM workers WHERE id=?",new String[]{""+id});if(c.moveToFirst()){n.setText(c.getString(0));p.setText(safe(c.getString(1)));d.setText(c.getString(2));m.setText(c.getString(3));}c.close();}l.addView(n);l.addView(p);l.addView(d);l.addView(m);AlertDialog x=new AlertDialog.Builder(this).setTitle(id==0?"Add Worker":"Edit Worker").setView(l).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();x.setOnShowListener(q->x.getButton(-1).setOnClickListener(v->{if(n.getText().toString().trim().isEmpty()){n.setError("Required");return;}ContentValues cv=new ContentValues();cv.put("name",n.getText().toString());cv.put("phone",p.getText().toString());cv.put("daily_salary",num(d.getText().toString()));cv.put("monthly_salary",num(m.getText().toString()));if(id==0)w().insert("workers",null,cv);else w().update("workers",cv,"id=?",new String[]{""+id});x.dismiss();workers();}));x.show();}
+
+    void attendance(String date){
+        page("Attendance • "+date);
+        CalendarView cv=new CalendarView(this);
+        try {
+            java.util.Date d=new SimpleDateFormat("yyyy-MM-dd",Locale.getDefault()).parse(date);
+            if(d!=null) cv.setDate(d.getTime(),false,true);
+        } catch(Exception ignored) {
+            cv.setDate(System.currentTimeMillis(),false,true);
+        }
+        root.addView(cv,new LinearLayout.LayoutParams(-1,dp(330)));
+        root.addView(button("+ Add Attendance",PURPLE,v->attendanceDialog(date,0)));
+        android.database.Cursor c=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);
+        while(c.moveToNext()){
+            int wid=c.getInt(0);
+            String name=c.getString(1);
+            android.database.Cursor q=r().rawQuery("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});
+            String st="Not marked",site="",note="";
+            int aid=0;
+            if(q.moveToFirst()){aid=q.getInt(0);st=safe(q.getString(1));site=safe(q.getString(2));note=safe(q.getString(3));}
+            q.close();
+            root.addView(card("👷 "+name+"
+Status: "+st+"
+Site: "+site+(note.isEmpty()?"":"
+"+note)));
+            final int fwid=wid;
+            root.addView(button("✏️ Edit Attendance",BLUE,v->attendanceDialog(date,fwid)));
+        }
+        c.close();
+        cv.setOnDateChangeListener((view,year,month,day)->{
+            String selectedDate=String.format(Locale.US,"%04d-%02d-%02d",year,month+1,day);
+            attendance(selectedDate);
+        });
+    }
+    void attendanceDialog(String date,int wid){android.database.Cursor wc=r().rawQuery("SELECT id,name FROM workers ORDER BY name",null);ArrayList<Integer> ids=new ArrayList<>();ArrayList<String> names=new ArrayList<>();while(wc.moveToNext()){ids.add(wc.getInt(0));names.add(wc.getString(1));}wc.close();if(names.isEmpty()){Toast.makeText(this,"Add worker first",Toast.LENGTH_SHORT).show();return;}LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);Spinner ws=new Spinner(this);ws.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names));Spinner ss=new Spinner(this);ss.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,new String[]{"Present","Half Day","Absent"}));EditText site=field("Project / Site",""),note=field("Note","");for(int i=0;i<ids.size();i++)if(ids.get(i)==wid)ws.setSelection(i);if(wid>0){android.database.Cursor c=r().rawQuery("SELECT status,site,note FROM attendance WHERE worker_id=? AND date=?",new String[]{""+wid,date});if(c.moveToFirst()){String oldStatus=safe(c.getString(0)); if("Half Day".equalsIgnoreCase(oldStatus)) ss.setSelection(1); else if("Absent".equalsIgnoreCase(oldStatus)) ss.setSelection(2); else ss.setSelection(0);site.setText(safe(c.getString(1)));note.setText(safe(c.getString(2)));}c.close();}if(wid>0)ws.setEnabled(false);
+l.addView(ws);l.addView(ss);l.addView(site);l.addView(note);
+AlertDialog d=new AlertDialog.Builder(this)
+ .setTitle("Attendance • "+date)
+ .setView(l)
+ .setNegativeButton("Cancel",null)
+ .setPositiveButton("Save",null).create();
+d.setOnShowListener(x->d.getButton(-1).setOnClickListener(v->{
+ int worker=ids.get(ws.getSelectedItemPosition());
+ ContentValues cv=new ContentValues();
+ cv.put("worker_id",worker);
+ cv.put("date",date);
+ cv.put("status",ss.getSelectedItem().toString());
+ cv.put("site",site.getText().toString());
+ cv.put("note",note.getText().toString());
+
+ // One attendance record per worker per date: update existing, otherwise insert.
+ long exists=0;
+ android.database.Cursor c=r().rawQuery(
+  "SELECT id FROM attendance WHERE worker_id=? AND date=? LIMIT 1",
+  new String[]{""+worker,date});
+ if(c.moveToFirst())exists=c.getLong(0);
+ c.close();
+
+ if(exists==0){
+  w().insert("attendance",null,cv);
+ }else{
+  w().update("attendance",cv,"id=?",new String[]{""+exists});
+ }
+ d.dismiss();
+ attendance(date);
+ }));
+d.show();
+}
 
     void salaryReport(String month){page("Salary / Advance Report");EditText mf=field("Month YYYY-MM",month);root.addView(mf);root.addView(button("🔄 Open Month",BLUE,v->salaryReport(vText(mf))));salaryCards(month);}
     String vText(EditText e){return e.getText().toString().trim();}
@@ -206,4 +562,1128 @@ void calendarDate(String date){if(root==null)return;TextView t=txt("",21,true);r
     void takePhoto(){if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.CAMERA},102);return;}try{File f=new File(getExternalFilesDir(null),"photo_"+System.currentTimeMillis()+".jpg");cameraUri=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",f);Intent i=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);i.putExtra(MediaStore.EXTRA_OUTPUT,cameraUri);i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,201);}catch(Exception e){Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();}}
     void choosePhoto(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,202);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||photoProject==null)return;Uri u=req==201?cameraUri:(data==null?null:data.getData());if(u!=null){ContentValues cv=new ContentValues();cv.put("project_id",photoProject.id);cv.put("uri",u.toString());w().insert("photos",null,cv);photos(photoProject);}}
+}
+package com.edisonsolar.businesspro;
+
+import android.content.ContentValues;
+import android.content.Context;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteOpenHelper;
+
+import java.util.ArrayList;
+import java.util.Locale;
+
+public class DBHelper extends SQLiteOpenHelper {
+
+    private static final String DB_NAME = "edison_solar_manager.db";
+    private static final int DB_VERSION = 4;
+
+    public DBHelper(Context context) {
+        super(context, DB_NAME, null, DB_VERSION);
+    }
+
+    @Override
+    public void onCreate(SQLiteDatabase db) {
+
+        db.execSQL(
+                "CREATE TABLE companies (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "name TEXT NOT NULL," +
+                        "phone TEXT)"
+        );
+
+        db.execSQL(
+                "CREATE TABLE projects (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "company_id INTEGER DEFAULT 0," +
+                        "number TEXT," +
+                        "company TEXT," +
+                        "customer TEXT," +
+                        "phone TEXT," +
+                        "site TEXT," +
+                        "kw REAL DEFAULT 0," +
+                        "amount REAL DEFAULT 0," +
+                        "date TEXT," +
+                        "status TEXT," +
+                        "work TEXT," +
+                        "lat REAL DEFAULT 0," +
+                        "lon REAL DEFAULT 0," +
+                        "has_location INTEGER DEFAULT 0)"
+        );
+
+        db.execSQL(
+                "CREATE TABLE payments (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "project_id INTEGER," +
+                        "amount REAL DEFAULT 0," +
+                        "date TEXT," +
+                        "mode TEXT," +
+                        "note TEXT)"
+        );
+
+        db.execSQL(
+                "CREATE TABLE expenses (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "project_id INTEGER," +
+                        "category TEXT," +
+                        "amount REAL DEFAULT 0," +
+                        "date TEXT," +
+                        "note TEXT)"
+        );
+
+        db.execSQL(
+                "CREATE TABLE photos (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "project_id INTEGER," +
+                        "uri TEXT)"
+        );
+
+        db.execSQL(
+                "CREATE TABLE workers (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "name TEXT NOT NULL," +
+                        "phone TEXT," +
+                        "daily_salary REAL DEFAULT 0," +
+                        "monthly_salary REAL DEFAULT 0)"
+        );
+
+        db.execSQL(
+                "CREATE TABLE attendance (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "worker_id INTEGER," +
+                        "date TEXT," +
+                        "status TEXT," +
+                        "site TEXT," +
+                        "note TEXT," +
+                        "UNIQUE(worker_id,date))"
+        );
+
+        db.execSQL(
+                "CREATE TABLE advances (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "worker_id INTEGER," +
+                        "amount REAL DEFAULT 0," +
+                        "date TEXT," +
+                        "note TEXT)"
+        );
+    }
+
+    @Override
+    public void onUpgrade(
+            SQLiteDatabase db,
+            int oldVersion,
+            int newVersion
+    ) {
+
+        if (oldVersion < 4) {
+
+            db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS workers (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                            "name TEXT NOT NULL," +
+                            "phone TEXT," +
+                            "daily_salary REAL DEFAULT 0," +
+                            "monthly_salary REAL DEFAULT 0)"
+            );
+
+            db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS attendance (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                            "worker_id INTEGER," +
+                            "date TEXT," +
+                            "status TEXT," +
+                            "site TEXT," +
+                            "note TEXT," +
+                            "UNIQUE(worker_id,date))"
+            );
+
+            db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS advances (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                            "worker_id INTEGER," +
+                            "amount REAL DEFAULT 0," +
+                            "date TEXT," +
+                            "note TEXT)"
+            );
+        }
+    }
+
+    // =========================================================
+    // COMPANY
+    // =========================================================
+
+    public ArrayList<Company> companies() {
+
+        ArrayList<Company> list = new ArrayList<>();
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,name,phone FROM companies ORDER BY name",
+                null
+        );
+
+        while (c.moveToNext()) {
+
+            Company company = new Company();
+
+            company.id = c.getInt(0);
+            company.name = safe(c.getString(1));
+            company.phone = safe(c.getString(2));
+
+            list.add(company);
+        }
+
+        c.close();
+
+        return list;
+    }
+
+    public void addCompany(
+            String name,
+            String phone
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("name", name);
+        values.put("phone", phone);
+
+        getWritableDatabase().insert(
+                "companies",
+                null,
+                values
+        );
+    }
+
+    public void updateCompany(
+            int id,
+            String name,
+            String phone
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("name", name);
+        values.put("phone", phone);
+
+        getWritableDatabase().update(
+                "companies",
+                values,
+                "id=?",
+                new String[]{String.valueOf(id)}
+        );
+    }
+
+    public void deleteCompany(int id) {
+
+        getWritableDatabase().delete(
+                "companies",
+                "id=?",
+                new String[]{String.valueOf(id)}
+        );
+    }
+
+    // =========================================================
+    // PROJECT
+    // =========================================================
+
+    public ArrayList<Project> projects() {
+
+        ArrayList<Project> list = new ArrayList<>();
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,company_id,number,company," +
+                        "customer,phone,site,kw,amount," +
+                        "date,status,work,lat,lon,has_location " +
+                        "FROM projects ORDER BY id DESC",
+                null
+        );
+
+        while (c.moveToNext()) {
+            list.add(readProject(c));
+        }
+
+        c.close();
+
+        return list;
+    }
+
+    public Project project(int id) {
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,company_id,number,company," +
+                        "customer,phone,site,kw,amount," +
+                        "date,status,work,lat,lon,has_location " +
+                        "FROM projects WHERE id=?",
+                new String[]{String.valueOf(id)}
+        );
+
+        Project project = null;
+
+        if (c.moveToFirst()) {
+            project = readProject(c);
+        }
+
+        c.close();
+
+        return project;
+    }
+
+    private Project readProject(Cursor c) {
+
+        Project p = new Project();
+
+        p.id = c.getInt(0);
+        p.companyId = c.getInt(1);
+
+        p.number = safe(c.getString(2));
+        p.company = safe(c.getString(3));
+        p.customer = safe(c.getString(4));
+        p.phone = safe(c.getString(5));
+        p.site = safe(c.getString(6));
+
+        p.kw = c.getDouble(7);
+        p.amount = c.getDouble(8);
+
+        p.date = safe(c.getString(9));
+        p.status = safe(c.getString(10));
+        p.work = safe(c.getString(11));
+
+        p.lat = c.getDouble(12);
+        p.lon = c.getDouble(13);
+        p.hasLoc = c.getInt(14) == 1;
+
+        return p;
+    }
+
+    public void addProject(
+            int companyId,
+            String company,
+            String customer,
+            String phone,
+            String site,
+            double kw,
+            double amount,
+            String date,
+            String status,
+            String work
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("company_id", companyId);
+        values.put("number", nextProjectNumber());
+
+        values.put("company", company);
+        values.put("customer", customer);
+        values.put("phone", phone);
+        values.put("site", site);
+
+        values.put("kw", kw);
+        values.put("amount", amount);
+
+        values.put("date", date);
+        values.put("status", status);
+        values.put("work", work);
+
+        getWritableDatabase().insert(
+                "projects",
+                null,
+                values
+        );
+    }
+
+    public void updateProject(
+            Project old,
+            int companyId,
+            String company,
+            String customer,
+            String phone,
+            String site,
+            double kw,
+            double amount,
+            String date,
+            String status,
+            String work
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("company_id", companyId);
+        values.put("company", company);
+        values.put("customer", customer);
+        values.put("phone", phone);
+        values.put("site", site);
+
+        values.put("kw", kw);
+        values.put("amount", amount);
+
+        values.put("date", date);
+        values.put("status", status);
+        values.put("work", work);
+
+        getWritableDatabase().update(
+                "projects",
+                values,
+                "id=?",
+                new String[]{String.valueOf(old.id)}
+        );
+    }
+
+    private String nextProjectNumber() {
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM projects",
+                null
+        );
+
+        int count = 0;
+
+        if (c.moveToFirst()) {
+            count = c.getInt(0);
+        }
+
+        c.close();
+
+        return String.format(
+                Locale.getDefault(),
+                "ESP-%04d",
+                count + 1
+        );
+    }
+
+    public void deleteProject(int projectId) {
+
+        SQLiteDatabase db =
+                getWritableDatabase();
+
+        db.delete(
+                "photos",
+                "project_id=?",
+                new String[]{String.valueOf(projectId)}
+        );
+
+        db.delete(
+                "expenses",
+                "project_id=?",
+                new String[]{String.valueOf(projectId)}
+        );
+
+        db.delete(
+                "payments",
+                "project_id=?",
+                new String[]{String.valueOf(projectId)}
+        );
+
+        db.delete(
+                "projects",
+                "id=?",
+                new String[]{String.valueOf(projectId)}
+        );
+    }
+
+    // =========================================================
+    // PAYMENTS
+    // =========================================================
+
+    public void addPayment(
+            int projectId,
+            double amount,
+            String date,
+            String note
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("project_id", projectId);
+        values.put("amount", amount);
+        values.put("date", date);
+        values.put("mode", "Payment");
+        values.put("note", note);
+
+        getWritableDatabase().insert(
+                "payments",
+                null,
+                values
+        );
+    }
+
+    public double collection(int projectId) {
+
+        return queryDouble(
+                "SELECT COALESCE(SUM(amount),0) " +
+                        "FROM payments WHERE project_id=?",
+                projectId
+        );
+    }
+
+    public double pending(int projectId) {
+
+        Project p = project(projectId);
+
+        if (p == null) {
+            return 0;
+        }
+
+        return Math.max(
+                0,
+                p.amount - collection(projectId)
+        );
+    }
+
+    // =========================================================
+    // EXPENSES
+    // =========================================================
+
+    public void addExpense(
+            int projectId,
+            double amount,
+            String category,
+            String date,
+            String note
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("project_id", projectId);
+        values.put("category", category);
+        values.put("amount", amount);
+        values.put("date", date);
+        values.put("note", note);
+
+        getWritableDatabase().insert(
+                "expenses",
+                null,
+                values
+        );
+    }
+
+    public double expenses(int projectId) {
+
+        return queryDouble(
+                "SELECT COALESCE(SUM(amount),0) " +
+                        "FROM expenses WHERE project_id=?",
+                projectId
+        );
+    }
+
+    public double profit(int projectId) {
+
+        Project p = project(projectId);
+
+        if (p == null) {
+            return 0;
+        }
+
+        return p.amount - expenses(projectId);
+    }
+
+    // =========================================================
+    // PHOTOS
+    // =========================================================
+
+    public void addPhoto(
+            int projectId,
+            String uri
+    ) {
+
+        ContentValues values = new ContentValues();
+
+        values.put("project_id", projectId);
+        values.put("uri", uri);
+
+        getWritableDatabase().insert(
+                "photos",
+                null,
+                values
+        );
+    }
+
+    public ArrayList<String> photos(
+            int projectId
+    ) {
+
+        ArrayList<String> list =
+                new ArrayList<>();
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT uri FROM photos " +
+                        "WHERE project_id=? ORDER BY id DESC",
+                new String[]{String.valueOf(projectId)}
+        );
+
+        while (c.moveToNext()) {
+            list.add(safe(c.getString(0)));
+        }
+
+        c.close();
+
+        return list;
+    }
+
+    // =========================================================
+    // WORKERS
+    // =========================================================
+
+    public ArrayList<Worker> workers() {
+
+        ArrayList<Worker> list =
+                new ArrayList<>();
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,name,phone,daily_salary,monthly_salary " +
+                        "FROM workers ORDER BY name",
+                null
+        );
+
+        while (c.moveToNext()) {
+
+            Worker worker = new Worker();
+
+            worker.id = c.getInt(0);
+            worker.name = safe(c.getString(1));
+            worker.phone = safe(c.getString(2));
+
+            worker.dailySalary = c.getDouble(3);
+            worker.monthlySalary = c.getDouble(4);
+
+            list.add(worker);
+        }
+
+        c.close();
+
+        return list;
+    }
+
+    public Worker worker(int id) {
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,name,phone,daily_salary,monthly_salary " +
+                        "FROM workers WHERE id=?",
+                new String[]{String.valueOf(id)}
+        );
+
+        Worker worker = null;
+
+        if (c.moveToFirst()) {
+
+            worker = new Worker();
+
+            worker.id = c.getInt(0);
+            worker.name = safe(c.getString(1));
+            worker.phone = safe(c.getString(2));
+
+            worker.dailySalary = c.getDouble(3);
+            worker.monthlySalary = c.getDouble(4);
+        }
+
+        c.close();
+
+        return worker;
+    }
+
+    public void saveWorker(Worker worker) {
+
+        ContentValues values =
+                new ContentValues();
+
+        values.put("name", worker.name);
+        values.put("phone", worker.phone);
+
+        values.put(
+                "daily_salary",
+                worker.dailySalary
+        );
+
+        values.put(
+                "monthly_salary",
+                worker.monthlySalary
+        );
+
+        if (worker.id == 0) {
+
+            getWritableDatabase().insert(
+                    "workers",
+                    null,
+                    values
+            );
+
+        } else {
+
+            getWritableDatabase().update(
+                    "workers",
+                    values,
+                    "id=?",
+                    new String[]{
+                            String.valueOf(worker.id)
+                    }
+            );
+        }
+    }
+
+    public void deleteWorker(int workerId) {
+
+        SQLiteDatabase db =
+                getWritableDatabase();
+
+        db.delete(
+                "attendance",
+                "worker_id=?",
+                new String[]{
+                        String.valueOf(workerId)
+                }
+        );
+
+        db.delete(
+                "advances",
+                "worker_id=?",
+                new String[]{
+                        String.valueOf(workerId)
+                }
+        );
+
+        db.delete(
+                "workers",
+                "id=?",
+                new String[]{
+                        String.valueOf(workerId)
+                }
+        );
+    }
+
+    // =========================================================
+    // ATTENDANCE
+    // =========================================================
+
+    public void saveAttendance(
+            int workerId,
+            String date,
+            String status,
+            String site,
+            String note
+    ) {
+
+        ContentValues values =
+                new ContentValues();
+
+        values.put("worker_id", workerId);
+        values.put("date", date);
+        values.put("status", status);
+        values.put("site", site);
+        values.put("note", note);
+
+        getWritableDatabase().insertWithOnConflict(
+                "attendance",
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE
+        );
+    }
+
+    public int presentDays(
+            int workerId,
+            String month
+    ) {
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        "SELECT COUNT(*) FROM attendance " +
+                                "WHERE worker_id=? " +
+                                "AND status='Present' " +
+                                "AND date LIKE ?",
+                        new String[]{
+                                String.valueOf(workerId),
+                                month + "%"
+                        }
+                );
+
+        int result = 0;
+
+        if (c.moveToFirst()) {
+            result = c.getInt(0);
+        }
+
+        c.close();
+
+        return result;
+    }
+
+    public int halfDayDays(
+            int workerId,
+            String month
+    ) {
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        "SELECT COUNT(*) FROM attendance " +
+                                "WHERE worker_id=? " +
+                                "AND status='Half Day' " +
+                                "AND date LIKE ?",
+                        new String[]{
+                                String.valueOf(workerId),
+                                month + "%"
+                        }
+                );
+
+        int result = 0;
+
+        if (c.moveToFirst()) {
+            result = c.getInt(0);
+        }
+
+        c.close();
+
+        return result;
+    }
+
+    public int absentDays(
+            int workerId,
+            String month
+    ) {
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        "SELECT COUNT(*) FROM attendance " +
+                                "WHERE worker_id=? " +
+                                "AND status='Absent' " +
+                                "AND date LIKE ?",
+                        new String[]{
+                                String.valueOf(workerId),
+                                month + "%"
+                        }
+                );
+
+        int result = 0;
+
+        if (c.moveToFirst()) {
+            result = c.getInt(0);
+        }
+
+        c.close();
+
+        return result;
+    }
+
+    // =========================================================
+    // ADVANCE
+    // =========================================================
+
+    public void saveAdvance(
+            int workerId,
+            double amount,
+            String date,
+            String note
+    ) {
+
+        ContentValues values =
+                new ContentValues();
+
+        values.put("worker_id", workerId);
+        values.put("amount", amount);
+        values.put("date", date);
+        values.put("note", note);
+
+        getWritableDatabase().insert(
+                "advances",
+                null,
+                values
+        );
+    }
+
+    public double advances(int workerId) {
+
+        return queryDouble(
+                "SELECT COALESCE(SUM(amount),0) " +
+                        "FROM advances WHERE worker_id=?",
+                workerId
+        );
+    }
+
+    // =========================================================
+    // SALARY
+    // =========================================================
+
+    public double salaryForMonth(
+            Worker worker,
+            String month
+    ) {
+
+        if (worker.monthlySalary > 0) {
+
+            return worker.monthlySalary;
+        }
+
+        int present =
+                presentDays(
+                        worker.id,
+                        month
+                );
+
+        int half =
+                halfDayDays(
+                        worker.id,
+                        month
+                );
+
+        return
+                (present * worker.dailySalary) +
+                (half * worker.dailySalary * 0.5);
+    }
+
+    public double salaryBalance(
+            Worker worker,
+            String month
+    ) {
+
+        double salary =
+                salaryForMonth(
+                        worker,
+                        month
+                );
+
+        double advance =
+                advances(worker.id);
+
+        return salary - advance;
+    }
+
+    public String workerReport(
+            Worker worker,
+            String month
+    ) {
+
+        int present =
+                presentDays(
+                        worker.id,
+                        month
+                );
+
+        int half =
+                halfDayDays(
+                        worker.id,
+                        month
+                );
+
+        int absent =
+                absentDays(
+                        worker.id,
+                        month
+                );
+
+        double salary =
+                salaryForMonth(
+                        worker,
+                        month
+                );
+
+        double advance =
+                advances(worker.id);
+
+        double balance = salary - advance;
+
+        return
+                "WORKER: " +
+                        worker.name +
+
+                        "\nPresent: " +
+                        present +
+
+                        "\nHalf Day: " +
+                        half +
+
+                        "\nAbsent: " +
+                        absent +
+
+                        "\nDaily Salary: ₹" +
+                        fmt(worker.dailySalary) +
+
+                        "\nMonthly Salary: ₹" +
+                        fmt(worker.monthlySalary) +
+
+                        "\nSalary: ₹" +
+                        fmt(salary) +
+
+                        "\nAdvance: ₹" +
+                        fmt(advance) +
+
+                        "\nBALANCE: ₹" +
+                        fmt(balance);
+    }
+
+    // =========================================================
+    // DASHBOARD
+    // =========================================================
+
+    public String dashboard() {
+
+        double totalKw = 0;
+        double totalValue = 0;
+        double totalCollection = 0;
+        double totalExpenses = 0;
+
+        ArrayList<Project> list =
+                projects();
+
+        for (Project p : list) {
+
+            totalKw += p.kw;
+            totalValue += p.amount;
+
+            totalCollection +=
+                    collection(p.id);
+
+            totalExpenses +=
+                    expenses(p.id);
+        }
+
+        double pending =
+                Math.max(
+                        0,
+                        totalValue -
+                                totalCollection
+                );
+
+        double profit =
+                totalValue -
+                        totalExpenses;
+
+        return
+                "📊 EDISON SOLAR DASHBOARD\n\n" +
+
+                "Projects: " +
+                list.size() +
+
+                "\nTotal Solar: " +
+                fmt(totalKw) +
+                " kW" +
+
+                "\nProject Value: ₹" +
+                fmt(totalValue) +
+
+                "\nCollection: ₹" +
+                fmt(totalCollection) +
+
+                "\nPending: ₹" +
+                fmt(pending) +
+
+                "\nExpenses: ₹" +
+                fmt(totalExpenses) +
+
+                "\nSite Profit: ₹" +
+                fmt(profit);
+    }
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private double queryDouble(
+            String sql,
+            int id
+    ) {
+
+        Cursor c =
+                getReadableDatabase().rawQuery(
+                        sql,
+                        new String[]{
+                                String.valueOf(id)
+                        }
+                );
+
+        double value = 0;
+
+        if (c.moveToFirst()) {
+            value = c.getDouble(0);
+        }
+
+        c.close();
+
+        return value;
+    }
+
+    private String safe(String value) {
+
+        return value == null
+                ? ""
+                : value;
+    }
+
+    public static String fmt(double value) {
+
+        if (
+                Math.abs(
+                        value -
+                                Math.round(value)
+                ) < 0.00001
+        ) {
+
+            return String.format(
+                    Locale.getDefault(),
+                    "%.0f",
+                    value
+            );
+        }
+
+        return String.format(
+                Locale.getDefault(),
+                "%.2f",
+                value
+        );
+    }
+}
+3. Models.java
+package com.edisonsolar.businesspro;
+
+import android.database.Cursor;
+
+class Company {
+    int id;
+    String name = "";
+    String phone = "";
+}
+
+class Worker {
+    int id;
+    String name = "";
+    String phone = "";
+    double dailySalary = 0;
+    double monthlySalary = 0;
+}
+
+class Project {
+    int id;
+    int companyId;
+    String number = "";
+    String company = "";
+    String customer = "";
+    String phone = "";
+    String site = "";
+    String date = "";
+    String status = "";
+    String work = "";
+    double kw = 0;
+    double amount = 0;
+    double lat = 0;
+    double lon = 0;
+    boolean hasLoc = false;
+
+    static Project from(Cursor c) {
+        Project p = new Project();
+        p.id = c.getInt(0);
+        p.companyId = c.getInt(1);
+        p.number = c.getString(2);
+        p.company = c.getString(3);
+        p.customer = c.getString(4);
+        p.phone = c.getString(5);
+        p.site = c.getString(6);
+        p.kw = c.getDouble(7);
+        p.amount = c.getDouble(8);
+        p.date = c.getString(9);
+        p.status = c.getString(10);
+        p.work = c.getString(11);
+        p.lat = c.getDouble(12);
+        p.lon = c.getDouble(13);
+        p.hasLoc = c.getInt(14) == 1;
+        return p;
+    }
 }
