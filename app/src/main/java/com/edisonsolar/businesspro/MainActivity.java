@@ -277,11 +277,12 @@ public class MainActivity extends Activity {
     }
     private int present(int id,String m) {return (int)scalar("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND status='Present' AND date LIKE ?",String.valueOf(id),m+"%");}
     private int absent(int id,String m) {return (int)scalar("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND status='Absent' AND date LIKE ?",String.valueOf(id),m+"%");}
+    private int halfDay(int id,String m) {return (int)scalar("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND status='Half Day' AND date LIKE ?",String.valueOf(id),m+"%");}
     private double advances(int id,String m) {return scalar("SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=? AND date LIKE ?",String.valueOf(id),m+"%");}
-    private double salary(Worker w,String m) {return w.monthlySalary>0?w.monthlySalary:w.dailySalary*present(w.id,m);}
+    private double salary(Worker w,String m) {return w.monthlySalary>0?w.monthlySalary:w.dailySalary*(present(w.id,m)+(halfDay(w.id,m)*0.5));}
     private void workerDetail(Worker w) {
         page("Worker: "+safe(w.name),"workers");String m=month();
-        root.addView(card("Present: "+present(w.id,m)+"\nAbsent: "+absent(w.id,m)+"\nSalary: ₹"+money(salary(w,m))+"\nAdvance: ₹"+money(advances(w.id,m))+"\nBalance: ₹"+money(salary(w,m)-advances(w.id,m))));
+        root.addView(card("Present: "+present(w.id,m)+"\nHalf Day: "+halfDay(w.id,m)+"\nAbsent: "+absent(w.id,m)+"\nSalary: ₹"+money(salary(w,m))+"\nAdvance: ₹"+money(advances(w.id,m))+"\nBalance: ₹"+money(salary(w,m)-advances(w.id,m))));
         root.addView(button("+ / Edit Attendance",BLUE,v->attendanceDialog(w,null)));
         root.addView(button("+ Salary Advance",ORANGE,v->advanceDialog(w,null)));
         root.addView(button("Worker PDF",PURPLE,v->pdf(workerReport(w,m),"salary_"+w.id)));
@@ -336,23 +337,99 @@ public class MainActivity extends Activity {
             showDay(selected);
         });
     }
+
     private LinearLayout calendarDetails;
 
     private void showDay(String day) {
         if(calendarDetails != null) root.removeView(calendarDetails);
-        calendarDetails = vertical();
+        calendarDetails=vertical();
         calendarDetails.addView(text("Attendance: "+day,20,true));
-        try(Cursor c=query("SELECT w.name,a.status,a.site,a.note FROM attendance a JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY a.site,w.name",day)){
+        calendarDetails.addView(text("Mark attendance for each worker",16,false));
+
+        try(Cursor c=query("SELECT id,name,daily_salary,monthly_salary FROM workers ORDER BY name")){
             int count=0;
             while(c.moveToNext()){
                 count++;
-                calendarDetails.addView(card(safe(c.getString(0))+" • "+safe(c.getString(1))+
-                    "\nSite: "+safe(c.getString(2))+"\n"+safe(c.getString(3))));
+                Worker w=new Worker(c.getInt(0),safe(c.getString(1)),safe(c.getString(2)),c.getDouble(3));
+                int attendanceId=0;
+                String status="Not Marked",site="",note="";
+                try(Cursor a=query("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",
+                        String.valueOf(w.id),day)){
+                    if(a.moveToFirst()){
+                        attendanceId=a.getInt(0);
+                        status=safe(a.getString(1));
+                        site=safe(a.getString(2));
+                        note=safe(a.getString(3));
+                    }
+                }
+                LinearLayout workerBox=vertical();
+                workerBox.addView(card("👷 "+safe(w.name)+"\nStatus: "+status+
+                    (site.isEmpty()?"":"\nSite: "+site)+(note.isEmpty()?"":"\nNote: "+note)));
+                final Worker fw=w;
+                final int faid=attendanceId;
+                final String fday=day;
+                workerBox.addView(button(attendanceId==0?"Mark Attendance":"Edit Attendance",BLUE,
+                    v->calendarAttendanceDialog(fw,fday,faid)));
+                calendarDetails.addView(workerBox);
             }
-            if(count==0) calendarDetails.addView(card("No attendance for "+day));
+            if(count==0) calendarDetails.addView(card("No workers added."));
         }
         root.addView(calendarDetails);
     }
+
+    private void calendarAttendanceDialog(Worker w,String day,int attendanceId) {
+        LinearLayout l=vertical();
+        l.addView(text("Worker: "+safe(w.name)+"\nDate: "+day,18,true));
+        Spinner status=spinner(new String[]{"Present","Half Day","Absent"});
+        EditText site=field("Project / Site","");
+        EditText note=field("Note","");
+
+        if(attendanceId>0) {
+            try(Cursor c=query("SELECT status,site,note FROM attendance WHERE id=?",
+                    String.valueOf(attendanceId))){
+                if(c.moveToFirst()){
+                    String st=safe(c.getString(0));
+                    if("Half Day".equalsIgnoreCase(st)) status.setSelection(1);
+                    else if("Absent".equalsIgnoreCase(st)) status.setSelection(2);
+                    else status.setSelection(0);
+                    site.setText(safe(c.getString(1)));
+                    note.setText(safe(c.getString(2)));
+                }
+            }
+        }
+
+        l.addView(status);
+        l.addView(site);
+        l.addView(note);
+
+        dialog(attendanceId==0?"Add Attendance":"Edit Attendance",l,()->{
+            android.content.ContentValues v=values(
+                "worker_id",w.id,
+                "date",day,
+                "status",status.getSelectedItem().toString(),
+                "site",site.getText().toString(),
+                "note",note.getText().toString()
+            );
+            if(attendanceId==0) {
+                android.database.Cursor old=query("SELECT id FROM attendance WHERE worker_id=? AND date=? LIMIT 1",
+                    String.valueOf(w.id),day);
+                boolean exists=old.moveToFirst();
+                old.close();
+                if(exists) {
+                    db.getWritableDatabase().update("attendance",v,
+                        "worker_id=? AND date=?",new String[]{String.valueOf(w.id),day});
+                } else {
+                    db.getWritableDatabase().insertWithOnConflict("attendance",null,v,
+                        android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE);
+                }
+            } else {
+                db.getWritableDatabase().update("attendance",v,"id=?",
+                    new String[]{String.valueOf(attendanceId)});
+            }
+            calendar();
+        });
+    }
+
     private String workerReport(Worker w,String m) {
         return "EDISON SOLAR WORKER SALARY REPORT\nMonth: "+m+"\nWorker: "+safe(w.name)+"\nPresent: "+present(w.id,m)+
             "\nAbsent: "+absent(w.id,m)+"\nDaily Salary: Rs."+money(w.dailySalary)+"\nMonthly Salary: Rs."+money(w.monthlySalary)+
