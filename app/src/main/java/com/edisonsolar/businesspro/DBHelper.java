@@ -834,18 +834,6 @@ public class DBHelper extends SQLiteOpenHelper {
         );
     }
 
-    public double advancesForMonth(int workerId, String month) {
-        Cursor c = getReadableDatabase().rawQuery(
-                "SELECT COALESCE(SUM(amount),0) FROM advances " +
-                        "WHERE worker_id=? AND date LIKE ?",
-                new String[]{String.valueOf(workerId), month + "%"}
-        );
-        double value = 0;
-        if(c.moveToFirst()) value = c.getDouble(0);
-        c.close();
-        return value;
-    }
-
     // =========================================================
     // SALARY
     // =========================================================
@@ -889,7 +877,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 );
 
         double advance =
-                advancesForMonth(worker.id, month);
+                advances(worker.id);
 
         return salary - advance;
     }
@@ -924,7 +912,7 @@ public class DBHelper extends SQLiteOpenHelper {
                 );
 
         double advance =
-                advancesForMonth(worker.id, month);
+                advances(worker.id);
 
         double balance =
                 salary - advance;
@@ -1103,5 +1091,3 @@ class Project {
         return p;
     }
 }
-
-
