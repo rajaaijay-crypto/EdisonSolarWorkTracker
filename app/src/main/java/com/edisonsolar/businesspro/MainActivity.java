@@ -99,12 +99,18 @@ public class MainActivity extends Activity {
     }
     private Project getProject(int id) { for(Project p:db.projects())if(p.id==id)return p; return null; }
 
+    private String totalSolarKw() {
+        double total = 0;
+        for(Project p : db.projects()) total += p.kw;
+        return money(total);
+    }
+
     private void home() {
         page("EDISON SOLAR MANAGER PRO","home");
         ImageView logo=new ImageView(this); logo.setImageResource(R.drawable.edison_solar_logo);
         logo.setAdjustViewBounds(true); logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         root.addView(logo,new LinearLayout.LayoutParams(-1,dp(140)));
-        root.addView(card(db.dashboard()));
+        root.addView(card("📊 EDISON SOLAR DASHBOARD\n\nProjects: " + db.projects().size() + "\nTotal Solar: " + totalSolarKw() + " kW"));
         root.addView(button("🏢 Companies",BLUE,v->companies()));
         root.addView(button("☀ Projects",BLUE,v->projects()));
         root.addView(button("👷 Workers / Attendance",PURPLE,v->workers()));
@@ -330,12 +336,22 @@ public class MainActivity extends Activity {
             showDay(selected);
         });
     }
+    private LinearLayout calendarDetails;
+
     private void showDay(String day) {
-        root.addView(text("Attendance: "+day,20,true));
+        if(calendarDetails != null) root.removeView(calendarDetails);
+        calendarDetails = vertical();
+        calendarDetails.addView(text("Attendance: "+day,20,true));
         try(Cursor c=query("SELECT w.name,a.status,a.site,a.note FROM attendance a JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY a.site,w.name",day)){
-            int count=0;while(c.moveToNext()){count++;root.addView(card(safe(c.getString(0))+" • "+safe(c.getString(1))+"\nSite: "+safe(c.getString(2))+"\n"+safe(c.getString(3))));}
-            if(count==0)root.addView(card("No attendance for "+day));
+            int count=0;
+            while(c.moveToNext()){
+                count++;
+                calendarDetails.addView(card(safe(c.getString(0))+" • "+safe(c.getString(1))+
+                    "\nSite: "+safe(c.getString(2))+"\n"+safe(c.getString(3))));
+            }
+            if(count==0) calendarDetails.addView(card("No attendance for "+day));
         }
+        root.addView(calendarDetails);
     }
     private String workerReport(Worker w,String m) {
         return "EDISON SOLAR WORKER SALARY REPORT\nMonth: "+m+"\nWorker: "+safe(w.name)+"\nPresent: "+present(w.id,m)+
