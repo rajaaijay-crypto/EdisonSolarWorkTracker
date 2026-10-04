@@ -45,6 +45,30 @@ public class MainActivity extends Activity {
     private String money(double d) { return String.format(Locale.US,"%,.2f",d); }
     private String today() { return new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date()); }
     private String month() { return new SimpleDateFormat("yyyy-MM",Locale.US).format(new Date()); }
+    private interface MonthCallback { void done(String value); }
+
+    private String monthOfDate(String date) {
+        if(date==null) return "";
+        String d=date.trim();
+        if(d.matches("\\d{4}-\\d{2}-\\d{2}")) return d.substring(0,7);
+        return "";
+    }
+
+    private void chooseMonth(String current, MonthCallback callback) {
+        try {
+            String[] a=current.split("-");
+            int y=Integer.parseInt(a[0]);
+            int m=Integer.parseInt(a[1])-1;
+            DatePickerDialog picker=new DatePickerDialog(this,
+                    (view,year,month,day)->callback.done(
+                            String.format(Locale.US,"%04d-%02d",year,month+1)),
+                    y,m,1);
+            picker.show();
+        } catch(Exception e) {
+            toast("Month select error");
+        }
+    }
+
     private TextView text(String s,int size,boolean bold) {
         TextView t=new TextView(this); t.setText(s); t.setTextSize(size); t.setTextColor(DARK);
         t.setTypeface(null,bold?Typeface.BOLD:Typeface.NORMAL); t.setPadding(dp(9),dp(9),dp(9),dp(9)); return t;
@@ -104,7 +128,7 @@ public class MainActivity extends Activity {
         ImageView logo=new ImageView(this); logo.setImageResource(R.drawable.edison_solar_logo);
         logo.setAdjustViewBounds(true); logo.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         root.addView(logo,new LinearLayout.LayoutParams(-1,dp(140)));
-        root.addView(card(db.dashboard()));
+        root.addView(card(homeDashboard()));
         root.addView(button("🏢 Companies",BLUE,v->companies()));
         root.addView(button("☀ Projects",BLUE,v->projects()));
         root.addView(button("👷 Workers / Attendance",PURPLE,v->workers()));
@@ -113,6 +137,17 @@ public class MainActivity extends Activity {
         root.addView(button("📅 Calendar",PURPLE,v->calendar()));
         root.addView(button("📊 Reports / PDF",PURPLE,v->reports()));
     }
+    private String homeDashboard() {
+        double kw = 0;
+        int count = 0;
+        for(Project p : db.projects()) {
+            count++;
+            kw += p.kw;
+        }
+        return "📊 DASHBOARD\\nTotal Projects: " + count +
+                "\\nTotal Solar: " + money(kw) + " kW";
+    }
+
     private void companies() {
         page("Companies","companies"); root.addView(button("+ Add Company",BLUE,v->companyDialog(null)));
         for(Company c:db.companies()) {
@@ -145,11 +180,32 @@ public class MainActivity extends Activity {
             "\nProfit (collected basis): ₹"+money(collection-expenses-salary)+"\nPending: ₹"+money(db.pending(p.id))+"\nDate: "+safe(p.date);
     }
     private void projects() {
-        page("Projects","projects");root.addView(button("+ Add Project",BLUE,v->projectDialog(null)));
-        for(Project p:db.projects()) {root.addView(card(projectSummary(p)));
-            root.addView(button("Open full report",BLUE,v->projectFullReport(p)));
-            root.addView(button("Edit / Delete / Photos / GPS",PURPLE,v->projectMenu(p)));}
+        projects(month());
     }
+
+    private void projects(String selectedMonth) {
+        page("Projects","projects");
+        root.addView(button("📅 Select Month: "+selectedMonth,BLUE,
+                v->chooseMonth(selectedMonth,m->projects(m))));
+        root.addView(button("+ Add Project",BLUE,v->projectDialog(null)));
+
+        int totalProjects=0;
+        double totalKw=0;
+
+        for(Project p:db.projects()) {
+            if(!selectedMonth.equals(monthOfDate(p.date))) continue;
+            totalProjects++;
+            totalKw += p.kw;
+            root.addView(card(projectSummary(p)));
+            root.addView(button("Open full report",BLUE,v->projectFullReport(p)));
+            root.addView(button("Edit / Delete / Photos / GPS",PURPLE,v->projectMenu(p)));
+        }
+
+        root.addView(card("MONTH TOTAL • "+selectedMonth+
+                "\\nTotal Projects: "+totalProjects+
+                "\\nTotal Solar: "+money(totalKw)+" kW"));
+    }
+
     private void projectDialog(Project old) {
         LinearLayout l=vertical(); ArrayList<Company> companies=db.companies();
         ArrayList<String> labels=new ArrayList<>(); labels.add("No company / manual"); for(Company c:companies)labels.add(c.name);
@@ -243,21 +299,72 @@ public class MainActivity extends Activity {
             if(selected!=null)projectExpenses(selected);else expenses();
         });
     }
+    private int halfDay(int id,String m) {
+        return (int)scalar(
+                "SELECT COUNT(*) FROM attendance WHERE worker_id=? AND status='Half Day' AND date LIKE ?",
+                String.valueOf(id),m+"%");
+    }
+
+    private double salary(Worker w,String m) {
+        if(w.monthlySalary>0) return w.monthlySalary;
+        return w.dailySalary * present(w.id,m)
+                + w.dailySalary * 0.5 * halfDay(w.id,m);
+    }
+
     private void workers() {
-        page("Workers / Attendance","workers");root.addView(button("+ Add Worker",PURPLE,v->workerDialog(null)));
+        workers(month());
+    }
+
+    private void workers(String selectedMonth) {
+        page("Workers / Attendance","workers");
+        root.addView(button("+ Add Worker",PURPLE,v->workerDialog(null)));
         root.addView(button("Attendance Calendar",BLUE,v->calendar()));
+        root.addView(button("📅 Select Month: "+selectedMonth,ORANGE,
+                v->chooseMonth(selectedMonth,m->workers(m))));
+
+        double totalSalary=0,totalAdvance=0,totalPending=0;
+
         for(Worker w:db.workers()) {
-            root.addView(card(safe(w.name)+"\nPhone: "+safe(w.phone)+"\nDaily: ₹"+money(w.dailySalary)+"\nMonthly: ₹"+money(w.monthlySalary)+
-                "\nPresent (this month): "+present(w.id,month())+"\nAbsent: "+absent(w.id,month())+"\nAdvance: ₹"+money(advances(w.id,month()))+
-                "\nPending salary: ₹"+money(salary(w,month())-advances(w.id,month()))));
+            int p=present(w.id,selectedMonth);
+            int h=halfDay(w.id,selectedMonth);
+            int a=absent(w.id,selectedMonth);
+            double sal=salary(w,selectedMonth);
+            double adv=advances(w.id,selectedMonth);
+            double pending=sal-adv;
+
+            totalSalary+=sal;
+            totalAdvance+=adv;
+            totalPending+=pending;
+
+            root.addView(card(
+                    "👷 "+safe(w.name)+
+                    "\\nPresent: "+p+
+                    "\\nHalf Day: "+h+
+                    "\\nAbsent: "+a+
+                    "\\nDaily Salary: ₹"+money(w.dailySalary)+
+                    "\\nMonthly Salary: ₹"+money(w.monthlySalary)+
+                    "\\nGross Salary: ₹"+money(sal)+
+                    "\\nAdvance: ₹"+money(adv)+
+                    "\\nPending Balance: ₹"+money(pending)
+            ));
             root.addView(button("Attendance / Salary / Advance",PURPLE,v->workerDetail(w)));
             root.addView(button("Edit worker",BLUE,v->workerDialog(w)));
-            root.addView(button("Delete worker",RED,v->confirm("Delete worker and related attendance / advances?",()->{
-                db.getWritableDatabase().delete("attendance","worker_id=?",new String[]{String.valueOf(w.id)});
-                db.getWritableDatabase().delete("advances","worker_id=?",new String[]{String.valueOf(w.id)});
-                delete("workers",w.id);workers();})));
+            root.addView(button("Delete worker",RED,v->confirm(
+                    "Delete worker and related attendance / advances?",
+                    ()->{ db.getWritableDatabase().delete("attendance","worker_id=?",
+                            new String[]{String.valueOf(w.id)});
+                        db.getWritableDatabase().delete("advances","worker_id=?",
+                            new String[]{String.valueOf(w.id)});
+                        delete("workers",w.id); workers(selectedMonth);
+                    })));
         }
+
+        root.addView(card("MONTH TOTAL • "+selectedMonth+
+                "\\nTotal Salary: ₹"+money(totalSalary)+
+                "\\nTotal Advance: ₹"+money(totalAdvance)+
+                "\\nTotal Pending: ₹"+money(totalPending)));
     }
+
     private void workerDialog(Worker old) {
         LinearLayout l=vertical();EditText name=field("Worker name",old==null?"":safe(old.name));
         EditText phone=field("Phone",old==null?"":safe(old.phone));
@@ -272,7 +379,6 @@ public class MainActivity extends Activity {
     private int present(int id,String m) {return (int)scalar("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND status='Present' AND date LIKE ?",String.valueOf(id),m+"%");}
     private int absent(int id,String m) {return (int)scalar("SELECT COUNT(*) FROM attendance WHERE worker_id=? AND status='Absent' AND date LIKE ?",String.valueOf(id),m+"%");}
     private double advances(int id,String m) {return scalar("SELECT COALESCE(SUM(amount),0) FROM advances WHERE worker_id=? AND date LIKE ?",String.valueOf(id),m+"%");}
-    private double salary(Worker w,String m) {return w.monthlySalary>0?w.monthlySalary:w.dailySalary*present(w.id,m);}
     private void workerDetail(Worker w) {
         page("Worker: "+safe(w.name),"workers");String m=month();
         root.addView(card("Present: "+present(w.id,m)+"\nAbsent: "+absent(w.id,m)+"\nSalary: ₹"+money(salary(w,m))+"\nAdvance: ₹"+money(advances(w.id,m))+"\nBalance: ₹"+money(salary(w,m)-advances(w.id,m))));
@@ -294,19 +400,67 @@ public class MainActivity extends Activity {
         }
     }
     private void attendanceDialog(Worker w,Integer id) {
-        LinearLayout l=vertical();EditText date=field("Date YYYY-MM-DD",today()),site=field("Project / Site",""),note=field("Note","");
-        Spinner status=spinner(new String[]{"Present","Absent"});
-        if(id!=null)try(Cursor c=query("SELECT date,status,site,note FROM attendance WHERE id=?",String.valueOf(id))){if(c.moveToFirst()){
-            date.setText(safe(c.getString(0)));status.setSelection("Absent".equalsIgnoreCase(safe(c.getString(1)))?1:0);
-            site.setText(safe(c.getString(2)));note.setText(safe(c.getString(3)));}}
-        l.addView(date);l.addView(status);l.addView(site);l.addView(note);
+        LinearLayout l=vertical();
+        EditText date=field("Date YYYY-MM-DD",today());
+        EditText site=field("Project / Site","");
+        EditText note=field("Note","");
+        Spinner status=spinner(new String[]{"Present","Half Day","Absent"});
+
+        if(id!=null) {
+            try(Cursor c=query("SELECT date,status,site,note FROM attendance WHERE id=?",
+                    String.valueOf(id))) {
+                if(c.moveToFirst()) {
+                    date.setText(safe(c.getString(0)));
+                    String st=safe(c.getString(1));
+                    if("Half Day".equalsIgnoreCase(st)) status.setSelection(1);
+                    else if("Absent".equalsIgnoreCase(st)) status.setSelection(2);
+                    else status.setSelection(0);
+                    site.setText(safe(c.getString(2)));
+                    note.setText(safe(c.getString(3)));
+                }
+            }
+        }
+
+        l.addView(date); l.addView(status); l.addView(site); l.addView(note);
+
         dialog(id==null?"Add Attendance":"Edit Attendance",l,()->{
-            String day=date.getText().toString().trim();if(day.isEmpty())throw new IllegalArgumentException("Date required");
-            android.content.ContentValues v=values("worker_id",w.id,"date",day,"status",status.getSelectedItem().toString(),"site",site.getText().toString(),"note",note.getText().toString());
-            if(id==null)db.getWritableDatabase().insertWithOnConflict("attendance",null,v,android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE);
-            else db.getWritableDatabase().update("attendance",v,"id=?",new String[]{String.valueOf(id)});workerDetail(w);
+            String day=date.getText().toString().trim();
+            if(day.isEmpty()) throw new IllegalArgumentException("Date required");
+
+            android.content.ContentValues v=values(
+                    "worker_id",w.id,
+                    "date",day,
+                    "status",status.getSelectedItem().toString(),
+                    "site",site.getText().toString(),
+                    "note",note.getText().toString());
+
+            Cursor existing=query(
+                    "SELECT id FROM attendance WHERE worker_id=? AND date=? LIMIT 1",
+                    String.valueOf(w.id),day);
+            int existingId=existing.moveToFirst()?existing.getInt(0):-1;
+            existing.close();
+
+            if(id==null) {
+                if(existingId>0) {
+                    db.getWritableDatabase().update(
+                            "attendance",v,"id=?",
+                            new String[]{String.valueOf(existingId)});
+                } else {
+                    db.getWritableDatabase().insertOrThrow("attendance",null,v);
+                }
+            } else {
+                if(existingId>0 && existingId!=id) {
+                    throw new IllegalArgumentException(
+                            "This worker already has attendance for "+day);
+                }
+                db.getWritableDatabase().update(
+                        "attendance",v,"id=?",
+                        new String[]{String.valueOf(id)});
+            }
+            workerDetail(w);
         });
     }
+
     private void advanceDialog(Worker w,Integer id) {
         LinearLayout l=vertical();EditText amount=field("Advance amount ₹",""),date=field("Date YYYY-MM-DD",today()),note=field("Note","");
         if(id!=null)try(Cursor c=query("SELECT amount,date,note FROM advances WHERE id=?",String.valueOf(id))){if(c.moveToFirst()){
@@ -318,17 +472,68 @@ public class MainActivity extends Activity {
         });
     }
     private void calendar() {
-        page("Attendance Calendar","calendar");EditText day=field("Date YYYY-MM-DD",today());root.addView(day);
-        root.addView(button("Show Selected Date",BLUE,v->showDay(day.getText().toString().trim())));
-        root.addView(button("This Month Salary Report",PURPLE,v->salaryReportPage()));showDay(today());
+        page("Attendance Calendar","calendar");
+
+        CalendarView cv=new CalendarView(this);
+        try {
+            Date d=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(today());
+            if(d!=null) cv.setDate(d.getTime(),false,true);
+        } catch(Exception ignored) {}
+
+        root.addView(cv,new LinearLayout.LayoutParams(-1,dp(300)));
+
+        LinearLayout dayRoot=vertical();
+        root.addView(dayRoot);
+
+        showDayInto(dayRoot,today());
+
+        cv.setOnDateChangeListener((view,year,month,day)->{
+            String selected=String.format(Locale.US,"%04d-%02d-%02d",
+                    year,month+1,day);
+            showDayInto(dayRoot,selected);
+        });
+
+        root.addView(button("This Month Salary Report",PURPLE,
+                v->salaryReportPage()));
     }
-    private void showDay(String day) {
-        root.addView(text("Attendance: "+day,20,true));
-        try(Cursor c=query("SELECT w.name,a.status,a.site,a.note FROM attendance a JOIN workers w ON w.id=a.worker_id WHERE a.date=? ORDER BY a.site,w.name",day)){
-            int count=0;while(c.moveToNext()){count++;root.addView(card(safe(c.getString(0))+" • "+safe(c.getString(1))+"\nSite: "+safe(c.getString(2))+"\n"+safe(c.getString(3))));}
-            if(count==0)root.addView(card("No attendance for "+day));
+
+    private void showDayInto(LinearLayout dayRoot,String day) {
+        dayRoot.removeAllViews();
+        dayRoot.addView(text("Selected Date: "+day,20,true));
+        dayRoot.addView(button("+ Add Attendance",PURPLE,
+                v->{
+                    Worker first=null;
+                    for(Worker w:db.workers()){ first=w; break; }
+                    if(first==null){ toast("Add a worker first"); return; }
+                    attendanceDialog(first,null);
+                }));
+
+        try(Cursor c=query(
+                "SELECT a.id,w.id,w.name,a.status,a.site,a.note " +
+                "FROM attendance a JOIN workers w ON w.id=a.worker_id " +
+                "WHERE a.date=? ORDER BY a.site,w.name",day)) {
+
+            int count=0;
+            while(c.moveToNext()) {
+                count++;
+                int attendanceId=c.getInt(0);
+                int workerId=c.getInt(1);
+                Worker w=db.worker(workerId);
+                String cardText=safe(c.getString(2))+
+                        " • "+safe(c.getString(3))+
+                        "\\nSite: "+safe(c.getString(4))+
+                        (safe(c.getString(5)).isEmpty()?"":"\\n"+safe(c.getString(5)));
+
+                dayRoot.addView(card(cardText));
+                if(w!=null) {
+                    dayRoot.addView(button("✏️ Edit Attendance",BLUE,
+                            v->attendanceDialog(w,attendanceId)));
+                }
+            }
+            if(count==0) dayRoot.addView(card("No attendance for "+day));
         }
     }
+
     private String workerReport(Worker w,String m) {
         return "EDISON SOLAR WORKER SALARY REPORT\nMonth: "+m+"\nWorker: "+safe(w.name)+"\nPresent: "+present(w.id,m)+
             "\nAbsent: "+absent(w.id,m)+"\nDaily Salary: Rs."+money(w.dailySalary)+"\nMonthly Salary: Rs."+money(w.monthlySalary)+
