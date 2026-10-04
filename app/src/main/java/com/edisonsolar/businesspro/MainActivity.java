@@ -350,7 +350,11 @@ public class MainActivity extends Activity {
             int count=0;
             while(c.moveToNext()){
                 count++;
-                Worker w=new Worker(c.getInt(0),safe(c.getString(1)),safe(c.getString(2)),c.getDouble(3));
+                Worker w=new Worker();
+                w.id=c.getInt(0);
+                w.name=safe(c.getString(1));
+                w.dailySalary=c.getDouble(2);
+                w.monthlySalary=c.getDouble(3);
                 int attendanceId=0;
                 String status="Not Marked",site="",note="";
                 try(Cursor a=query("SELECT id,status,site,note FROM attendance WHERE worker_id=? AND date=?",
